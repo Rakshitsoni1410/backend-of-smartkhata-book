@@ -1,5 +1,5 @@
 import express from "express";
-import { registerUser, loginUser, getProfile, updateProfile, bookAppointment, listAppointment, cancelAppointment, makePayment, contactUs, addReview, getReviewedAppointments, getAllReviews, sendResetPasswordEmail, verifyOTP, resetPassword, changePassword, handlePaymentSuccess } from "../controllers/userController.js";
+import { registerUser, loginUser, getProfile, updateProfile, sendResetPasswordEmail, verifyOTP, resetPassword, changePassword } from "../controllers/userController.js";
 import authUser from "../middlewares/authUser.js";
 import upload from "../middlewares/multer.js";
 
@@ -17,33 +17,6 @@ userRouter.get("/getProfile", authUser, getProfile);
 
 // update user profile route
 userRouter.post("/updateProfile", upload.single("image"), authUser, updateProfile);
-
-// book an appointment route
-userRouter.post("/bookAppointment", authUser, bookAppointment);
-
-// get user appointments route
-userRouter.get("/appointments", authUser, listAppointment);
-
-// cancel an appointment route
-userRouter.post("/cancelAppointment", authUser, cancelAppointment);
-
-// make payment route
-userRouter.post("/makePayment", authUser, makePayment);
-
-// payment success route
-userRouter.post("/payment-success", authUser, handlePaymentSuccess);
-
-// contact us route
-userRouter.post("/contactUs", contactUs);
-
-// add review route
-userRouter.post("/addReview", authUser, addReview);
-
-// get reviewed appointments route
-userRouter.get("/reviewedAppointments", authUser, getReviewedAppointments);
-
-// get all reviews for testimonials
-userRouter.get("/reviews", getAllReviews);
 
 // send reset password email route
 userRouter.post("/sendResetPasswordEmail", sendResetPasswordEmail);

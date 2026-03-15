@@ -1,11 +1,19 @@
-import mongoose from 'mongoose'
+import mongoose from "mongoose";
 
-// connecting to the database
-const connection = async ()=>{
-    mongoose.connection.on('connected' , ()=> console.log("Database Connected"))
-    // await mongoose.connect(`${process.env.MONGODB_URI}/khatabook`)
-    await mongoose.connect(`mongodb://localhost:27017/prescripto`)
+const connection = async () => {
+  try {
+    mongoose.connection.on("connected", () => {
+      console.log("Database Connected");
+    });
 
-}
+    mongoose.connection.on("error", (err) => {
+      console.log("MongoDB error:", err.message);
+    });
+
+    await mongoose.connect(process.env.MONGODB_URI);
+  } catch (error) {
+    console.log("Connection error:", error.message);
+  }
+};
 
 export default connection;

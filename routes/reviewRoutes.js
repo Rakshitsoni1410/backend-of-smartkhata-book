@@ -10,10 +10,11 @@ const router = express.Router();
 // ✅ Add review (NO AUTH)
 router.post("/add", addReview);
 
+// ✅ Reply
+router.post("/reply/:reviewId", replyToReview);
+
 // ✅ Get reviews
 router.get("/:userId", getReviewsByUser);
 
-// ✅ Reply
-router.post("/reply/:reviewId", replyToReview);
 
 export default router;

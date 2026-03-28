@@ -107,3 +107,23 @@ export const loginUser = async (req, res) => {
     });
   }
 };
+export const getWholesalersByBusiness = async (req, res) => {
+  try {
+    const { businessType } = req.params;
+
+    const wholesalers = await userModel.find({
+      role: "Wholesaler",
+      businessType: businessType,
+    });
+
+    res.status(200).json({
+      success: true,
+      users: wholesalers,
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: error.message || "Failed to fetch wholesalers",
+    });
+  }
+};

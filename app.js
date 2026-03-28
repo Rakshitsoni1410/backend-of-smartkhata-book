@@ -21,6 +21,7 @@ app.use('/api/user', userRouter)// localhost:4000/api/user/
 app.use("/api/product", productRouter);
 app.use("/api/orders", orderRoutes);
 app.use("/api/reviews", reviewRouter);
+
 // testing api
 app.get('/api', (req, res) => {
     res.send("API Working")

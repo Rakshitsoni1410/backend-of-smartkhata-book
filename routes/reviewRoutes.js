@@ -1,9 +1,19 @@
 import express from "express";
-import { addReview, getReviewsByUser } from "../controllers/reviewController.js";
+import {
+  addReview,
+  getReviewsByUser,
+  replyToReview,
+} from "../controllers/reviewController.js";
 
-const reviewRouter = express.Router();
+const router = express.Router();
 
-reviewRouter.post("/add", addReview);
-reviewRouter.get("/:userId", getReviewsByUser);
+// ✅ Add review (NO AUTH)
+router.post("/add", addReview);
 
-export default reviewRouter;
+// ✅ Get reviews
+router.get("/:userId", getReviewsByUser);
+
+// ✅ Reply
+router.post("/reply/:reviewId", replyToReview);
+
+export default router;

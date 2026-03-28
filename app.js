@@ -7,6 +7,7 @@ import userRouter from './routes/userRoute.js'
 import productRouter from "./routes/productRoute.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import reviewRouter from "./routes/reviewRoutes.js";
+import dashboardRoutes from "./routes/dashboardRoutes.js";
 // app config
 const app = express()
 const port = process.env.PORT || 4000
@@ -21,7 +22,7 @@ app.use('/api/user', userRouter)// localhost:4000/api/user/
 app.use("/api/product", productRouter);
 app.use("/api/orders", orderRoutes);
 app.use("/api/reviews", reviewRouter);
-
+app.use("/api/dashboard", dashboardRoutes);
 // testing api
 app.get('/api', (req, res) => {
     res.send("API Working")

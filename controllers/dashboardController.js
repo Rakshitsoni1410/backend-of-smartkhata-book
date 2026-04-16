@@ -7,8 +7,6 @@ export const getDashboardData = async (req, res) => {
     const { role } = req.params;
     const { userId } = req.query;
 
-    console.log("Role:", role);
-    console.log("UserId from API:", userId);
 
     if (!userId) {
       return res.status(400).json({ message: "UserId required" });

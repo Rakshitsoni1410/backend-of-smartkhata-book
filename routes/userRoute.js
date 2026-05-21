@@ -1,10 +1,23 @@
-import express from "express"
-import { registerUser, loginUser } from "../controllers/userController.js"
-import { getWholesalersByBusiness } from "../controllers/userController.js";
+import express from "express";
 
-const userRouter = express.Router()
+import {
+  registerUser,
+  loginUser,
+  forgotPassword,
+  resetPassword,
+  getWholesalersByBusiness,
+} from "../controllers/userController.js";
 
-userRouter.post("/register", registerUser)
-userRouter.post("/login", loginUser)
-userRouter.get("/wholesalers/:businessType", getWholesalersByBusiness);
-export default userRouter
+const router = express.Router();
+
+router.post("/register", registerUser);
+
+router.post("/login", loginUser);
+
+router.post("/forgot-password", forgotPassword);
+
+router.post("/reset-password/:token", resetPassword);
+
+router.get("/wholesalers/:businessType", getWholesalersByBusiness);
+
+export default router;

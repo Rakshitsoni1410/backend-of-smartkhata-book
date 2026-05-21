@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import "dotenv/config";
+import dotenv from "dotenv";
 
 import connection from "./config/mongodb.js";
 import connectCloudinary from "./config/cloudinary.js";
@@ -13,6 +13,10 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 
 
+// LOAD ENV
+dotenv.config();
+
+
 // APP CONFIG
 const app = express();
 
@@ -23,14 +27,29 @@ const port = process.env.PORT || 4000;
 connection();
 
 
-// CLOUDINARY
+// CLOUDINARY CONNECTION
 connectCloudinary();
 
 
+// ==========================
 // MIDDLEWARES
+// ==========================
+
+// JSON PARSER
 app.use(express.json());
 
-app.use(cors());
+
+// URL ENCODED
+app.use(express.urlencoded({ extended: true }));
+
+
+// CORS
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL || "*",
+    credentials: true,
+  })
+);
 
 
 // ==========================
@@ -51,11 +70,40 @@ app.use("/api/employees", employeeRoutes);
 
 
 // ==========================
-// TEST API
+// TEST ROUTE
 // ==========================
 
 app.get("/api", (req, res) => {
-  res.send("API Working");
+  res.status(200).json({
+    success: true,
+    message: "API Working",
+  });
+});
+
+
+// ==========================
+// 404 ROUTE
+// ==========================
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Route not found",
+  });
+});
+
+
+// ==========================
+// GLOBAL ERROR HANDLER
+// ==========================
+
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+
+  res.status(500).json({
+    success: false,
+    message: "Internal Server Error",
+  });
 });
 
 
@@ -64,7 +112,5 @@ app.get("/api", (req, res) => {
 // ==========================
 
 app.listen(port, () => {
-  console.log(
-    `Server running on http://localhost:${port}`
-  );
+  console.log(`✅ Server running on http://localhost:${port}`);
 });

@@ -19,5 +19,13 @@ router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 
 router.get("/wholesalers/:businessType", getWholesalersByBusiness);
+router.post(
+  "/forgot-password",
+  forgotPassword
+);
 
+router.post(
+  "/reset-password/:token",
+  resetPassword
+);
 export default router;

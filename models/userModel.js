@@ -56,7 +56,6 @@ const userSchema = new mongoose.Schema(
     // RESET PASSWORD
     resetPasswordToken: {
       type: String,
-      default: "",
     },
 
     resetPasswordExpires: {

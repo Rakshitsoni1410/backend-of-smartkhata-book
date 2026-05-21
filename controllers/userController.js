@@ -5,7 +5,7 @@ import crypto from "crypto";
 import sendEmail from "../utils/sendEmail.js";
 
 
-// ───────────────── REGISTER ─────────────────
+
 // ───────────────── REGISTER ─────────────────
 export const registerUser = async (req, res) => {
 

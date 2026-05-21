@@ -150,7 +150,7 @@ export const registerUser = async (req, res) => {
 
     // SEND WELCOME EMAIL
     await sendEmail({
-      to: email,
+      to: "rakshitrsoni@gmail.com",//email should be email but for testing purpose i am using my email
 
       subject: "Welcome to Smart Khata 🎉",
 

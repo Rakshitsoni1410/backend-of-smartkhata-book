@@ -1,6 +1,6 @@
 import Review from "../models/reviewModel.js";
 import userModel from "../models/userModel.js";
-
+import Order from "../models/orderModel.js";
 // ======================================================
 // ✅ ADD REVIEW (Retailer → Wholesaler, Same Category)
 // ======================================================
@@ -108,6 +108,53 @@ export const getReviewsByUser = async (req, res) => {
     });
   }
 };
+export const getReviewSuggestions =
+  async (req, res) => {
+
+  try {
+
+    const { retailerId } = req.params;
+
+    // FIND ORDERS
+    const orders = await Order.find({
+      retailerId,
+      orderStatus: "delivered",
+    });
+
+    // GET WHOLESALER IDS
+    const wholesalerIds = [
+      ...new Set(
+        orders.map((o) =>
+          o.wholesalerId.toString()
+        )
+      ),
+    ];
+
+    // FETCH USERS
+    const wholesalers =
+      await userModel.find({
+        _id: { $in: wholesalerIds },
+        role: "Wholesaler",
+      });
+
+    res.status(200).json({
+      success: true,
+      users: wholesalers,
+    });
+
+  } catch (error) {
+
+    console.log(error);
+
+    res.status(500).json({
+      success: false,
+      message:
+        error.message ||
+        "Failed to fetch suggestions",
+    });
+  }
+};
+
 
 // ======================================================
 // ✅ REPLY TO REVIEW (Only Wholesaler)

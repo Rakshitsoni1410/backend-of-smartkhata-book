@@ -30,12 +30,24 @@ const productSchema = new mongoose.Schema({
     default: 0,
   },
 
+  // selling price from wholesaler side
   selling: {
     type: Number,
     default: 0,
   },
 
   profit: {
+    type: Number,
+    default: 0,
+  },
+
+  // AI fields
+  rating: {
+    type: Number,
+    default: 0,
+  },
+
+  reviews: {
     type: Number,
     default: 0,
   },

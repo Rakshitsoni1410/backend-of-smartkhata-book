@@ -118,7 +118,6 @@ export const getReviewSuggestions =
     // FIND ORDERS
     const orders = await Order.find({
       retailerId,
-      orderStatus: "delivered",
     });
 
     // GET WHOLESALER IDS

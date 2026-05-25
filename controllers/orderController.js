@@ -102,15 +102,12 @@ export const createOrder = async (req, res) => {
     const totalAmount = Number(bestProduct.selling) * Number(quantity);
 
     // WHOLESALER POLICY
+    const advancePercentage = 0;
 
-    const wholesaler = await userModel.findById(bestProduct.ownerId);
+    const advanceAmount = 0;
 
-    const advancePercentage = Number(wholesaler?.advancePercentage || 0);
-
-    const advanceAmount = totalAmount * (advancePercentage / 100);
-
-    const remainingAmount = totalAmount - advanceAmount;
-
+    const remainingAmount =
+      totalAmount;
     // CREATE ORDER
 
     const order = new Order({
@@ -416,30 +413,89 @@ export const completePayment = async (req, res) => {
     });
   }
 };
-export const requestAdvancePayment = async (req, res) => {
+export const requestAdvancePayment =
+  async (req, res) => {
+
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
 
-      {
-        advanceRequested: true,
+    const {
+      advancePercentage
+    } = req.body;
 
-        paymentStatus: "advanceRequested",
-      },
+    const order =
+      await Order.findById(
+        req.params.id
+      );
 
-      { new: true },
-    );
+    if (!order) {
+
+      return res.status(404).json({
+
+        success: false,
+
+        message:
+          "Order not found",
+      });
+    }
+
+    // =====================
+    // CALCULATE ADVANCE
+    // =====================
+
+    const advanceAmount =
+
+      order.totalAmount *
+
+      (Number(
+        advancePercentage
+      ) / 100);
+
+    const remainingAmount =
+
+      order.totalAmount -
+      advanceAmount;
+
+    // =====================
+    // UPDATE ORDER
+    // =====================
+
+    order.advanceRequested =
+      true;
+
+    order.advancePercentage =
+      Number(
+        advancePercentage
+      );
+
+    order.advanceAmount =
+      advanceAmount;
+
+    order.remainingAmount =
+      remainingAmount;
+
+    order.paymentStatus =
+      "advanceRequested";
+
+    await order.save();
 
     res.json({
+
       success: true,
+
+      message:
+        "Advance payment requested",
 
       order,
     });
+
   } catch (error) {
+
     res.status(500).json({
+
       success: false,
 
-      message: error.message,
+      message:
+        error.message,
     });
   }
 };

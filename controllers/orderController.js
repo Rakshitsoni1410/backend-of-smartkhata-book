@@ -231,28 +231,20 @@ export const getOrdersForWholesaler = async (req, res) => {
 };
 
 export const updateOrderStatus = async (req, res) => {
-
   try {
-
     const { status } = req.body;
 
     // =========================
     // FIND ORDER
     // =========================
 
-    const existingOrder =
-      await Order.findById(
-        req.params.id
-      );
+    const existingOrder = await Order.findById(req.params.id);
 
     if (!existingOrder) {
-
       return res.status(404).json({
-
         success: false,
 
-        message:
-          "Order not found",
+        message: "Order not found",
       });
     }
 
@@ -261,7 +253,6 @@ export const updateOrderStatus = async (req, res) => {
     // =========================
 
     const updateData = {
-
       orderStatus: status,
     };
 
@@ -270,43 +261,26 @@ export const updateOrderStatus = async (req, res) => {
     // =========================
 
     if (status === "approved") {
-
       // DELIVERY DATE
-      updateData.deliveryDate =
-        new Date(
-
-          Date.now() +
-
-          5 * 24 * 60 * 60 * 1000
-        );
+      updateData.deliveryDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
 
       // =====================
       // ADVANCE REQUIRED
       // =====================
 
-      if (
-        existingOrder
-          .advancePercentage > 0
-      ) {
+      if (existingOrder.advancePercentage > 0) {
+        updateData.orderStatus = "advancePending";
 
-        updateData.orderStatus =
-          "advancePending";
-
-        updateData.paymentStatus =
-          "unpaid";
+        updateData.paymentStatus = "unpaid";
       }
 
       // =====================
       // NO ADVANCE REQUIRED
       // =====================
-
       else {
+        updateData.orderStatus = "processing";
 
-        updateData.orderStatus =
-          "processing";
-
-        updateData.paymentStatus =
-          "partial";
+        updateData.paymentStatus = "partial";
       }
     }
 
@@ -315,9 +289,7 @@ export const updateOrderStatus = async (req, res) => {
     // =========================
 
     if (status === "onTheWay") {
-
-      updateData.orderStatus =
-        "onTheWay";
+      updateData.orderStatus = "onTheWay";
     }
 
     // =========================
@@ -325,12 +297,9 @@ export const updateOrderStatus = async (req, res) => {
     // =========================
 
     if (status === "delivered") {
+      updateData.orderStatus = "delivered";
 
-      updateData.orderStatus =
-        "delivered";
-
-      updateData.deliveredAt =
-        new Date();
+      updateData.deliveredAt = new Date();
     }
 
     // =========================
@@ -338,49 +307,39 @@ export const updateOrderStatus = async (req, res) => {
     // =========================
 
     if (status === "rejected") {
-
-      updateData.orderStatus =
-        "rejected";
+      updateData.orderStatus = "rejected";
     }
 
     // =========================
     // UPDATE ORDER
     // =========================
 
-    const order =
-      await Order.findByIdAndUpdate(
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
 
-        req.params.id,
+      updateData,
 
-        updateData,
-
-        { new: true }
-      );
+      { new: true },
+    );
 
     // =========================
     // RESPONSE
     // =========================
 
     res.json({
-
       success: true,
 
-      message:
-        "Order status updated",
+      message: "Order status updated",
 
       order,
     });
-
   } catch (error) {
-
     console.log(error);
 
     res.status(500).json({
-
       success: false,
 
-      message:
-        error.message,
+      message: error.message,
     });
   }
 };
@@ -457,79 +416,57 @@ export const completePayment = async (req, res) => {
     });
   }
 };
-export const requestAdvancePayment =
-  async (req, res) => {
-
+export const requestAdvancePayment = async (req, res) => {
   try {
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
 
-    const order =
-      await Order.findByIdAndUpdate(
+      {
+        advanceRequested: true,
 
-        req.params.id,
+        paymentStatus: "advanceRequested",
+      },
 
-        {
-          advanceRequested: true,
-        },
-
-        { new: true }
-      );
+      { new: true },
+    );
 
     res.json({
-
       success: true,
-
-      message:
-        "Advance payment requested",
 
       order,
     });
-
   } catch (error) {
-
     res.status(500).json({
-
       success: false,
 
-      message:
-        error.message,
+      message: error.message,
     });
   }
 };
-export const requestFinalPayment =
-  async (req, res) => {
-
+export const requestFinalPayment = async (req, res) => {
   try {
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
 
-    const order =
-      await Order.findByIdAndUpdate(
+      {
+        finalPaymentRequested: true,
+      },
 
-        req.params.id,
-
-        {
-          finalPaymentRequested: true,
-        },
-
-        { new: true }
-      );
+      { new: true },
+    );
 
     res.json({
-
       success: true,
 
-      message:
-        "Final payment requested",
+      message: "Final payment requested",
 
       order,
     });
-
   } catch (error) {
-
     res.status(500).json({
-
       success: false,
 
-      message:
-        error.message,
+      message: error.message,
     });
   }
 };

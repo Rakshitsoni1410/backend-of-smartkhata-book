@@ -12,24 +12,20 @@ import reviewRouter from "./routes/reviewRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 
-
+import ledgerRoutes from "./routes/ledgerRoutes.js";
 // LOAD ENV
 dotenv.config();
-
 
 // APP CONFIG
 const app = express();
 
 const port = process.env.PORT || 4000;
 
-
 // DATABASE CONNECTION
 connection();
 
-
 // CLOUDINARY CONNECTION
 connectCloudinary();
-
 
 // ==========================
 // MIDDLEWARES
@@ -38,19 +34,16 @@ connectCloudinary();
 // JSON PARSER
 app.use(express.json());
 
-
 // URL ENCODED
 app.use(express.urlencoded({ extended: true }));
-
 
 // CORS
 app.use(
   cors({
     origin: process.env.CLIENT_URL || "*",
     credentials: true,
-  })
+  }),
 );
-
 
 // ==========================
 // API ROUTES
@@ -68,7 +61,7 @@ app.use("/api/dashboard", dashboardRoutes);
 
 app.use("/api/employees", employeeRoutes);
 
-
+app.use("/api/ledger", ledgerRoutes);
 // ==========================
 // TEST ROUTE
 // ==========================
@@ -80,7 +73,6 @@ app.get("/api", (req, res) => {
   });
 });
 
-
 // ==========================
 // 404 ROUTE
 // ==========================
@@ -91,7 +83,6 @@ app.use((req, res) => {
     message: "Route not found",
   });
 });
-
 
 // ==========================
 // GLOBAL ERROR HANDLER
@@ -105,7 +96,6 @@ app.use((err, req, res, next) => {
     message: "Internal Server Error",
   });
 });
-
 
 // ==========================
 // SERVER

@@ -1,7 +1,7 @@
 import Order from "../models/orderModel.js";
 import userModel from "../models/userModel.js";
 import productModel from "../models/productModel.js";
-
+import Ledger from "../models/ledgerModel.js";
 export const createOrder = async (req, res) => {
   try {
     const { retailerId, productName, quantity, unit } = req.body;
@@ -106,8 +106,7 @@ export const createOrder = async (req, res) => {
 
     const advanceAmount = 0;
 
-    const remainingAmount =
-      totalAmount;
+    const remainingAmount = totalAmount;
     // CREATE ORDER
 
     const order = new Order({
@@ -165,7 +164,41 @@ export const createOrder = async (req, res) => {
     // SAVE ORDER
 
     await order.save();
+    // =========================
+    // RETAILER DEBIT ENTRY
+    // =========================
 
+    await Ledger.create({
+      userId: retailerId,
+
+      partyId: bestProduct.ownerId,
+
+      orderId: order._id,
+
+      type: "debit",
+
+      amount: totalAmount,
+
+      note: `Order placed for ${bestProduct.name}`,
+    });
+
+    // =========================
+    // WHOLESALER CREDIT ENTRY
+    // =========================
+
+    await Ledger.create({
+      userId: bestProduct.ownerId,
+
+      partyId: retailerId,
+
+      orderId: order._id,
+
+      type: "credit",
+
+      amount: totalAmount,
+
+      note: `New order received for ${bestProduct.name}`,
+    });
     // RESPONSE
 
     res.status(201).json({
@@ -361,7 +394,37 @@ export const payAdvance = async (req, res) => {
     order.orderStatus = "processing";
 
     await order.save();
+    // RETAILER PAYMENT
 
+    await Ledger.create({
+      userId: order.retailerId,
+
+      partyId: order.wholesalerId,
+
+      orderId: order._id,
+
+      type: "debit",
+
+      amount: order.advanceAmount,
+
+      note: "Advance payment paid",
+    });
+
+    // WHOLESALER RECEIVED
+
+    await Ledger.create({
+      userId: order.wholesalerId,
+
+      partyId: order.retailerId,
+
+      orderId: order._id,
+
+      type: "credit",
+
+      amount: order.advanceAmount,
+
+      note: "Advance payment received",
+    });
     res.json({
       success: true,
 
@@ -397,7 +460,37 @@ export const completePayment = async (req, res) => {
     order.orderStatus = "completed";
 
     await order.save();
+    // RETAILER FINAL PAYMENT
 
+    await Ledger.create({
+      userId: order.retailerId,
+
+      partyId: order.wholesalerId,
+
+      orderId: order._id,
+
+      type: "debit",
+
+      amount: order.remainingAmount,
+
+      note: "Final payment completed",
+    });
+
+    // WHOLESALER FINAL CREDIT
+
+    await Ledger.create({
+      userId: order.wholesalerId,
+
+      partyId: order.retailerId,
+
+      orderId: order._id,
+
+      type: "credit",
+
+      amount: order.remainingAmount,
+
+      note: "Final payment received",
+    });
     res.json({
       success: true,
 
@@ -413,28 +506,17 @@ export const completePayment = async (req, res) => {
     });
   }
 };
-export const requestAdvancePayment =
-  async (req, res) => {
-
+export const requestAdvancePayment = async (req, res) => {
   try {
+    const { advancePercentage } = req.body;
 
-    const {
-      advancePercentage
-    } = req.body;
-
-    const order =
-      await Order.findById(
-        req.params.id
-      );
+    const order = await Order.findById(req.params.id);
 
     if (!order) {
-
       return res.status(404).json({
-
         success: false,
 
-        message:
-          "Order not found",
+        message: "Order not found",
       });
     }
 
@@ -442,60 +524,38 @@ export const requestAdvancePayment =
     // CALCULATE ADVANCE
     // =====================
 
-    const advanceAmount =
+    const advanceAmount = order.totalAmount * (Number(advancePercentage) / 100);
 
-      order.totalAmount *
-
-      (Number(
-        advancePercentage
-      ) / 100);
-
-    const remainingAmount =
-
-      order.totalAmount -
-      advanceAmount;
+    const remainingAmount = order.totalAmount - advanceAmount;
 
     // =====================
     // UPDATE ORDER
     // =====================
 
-    order.advanceRequested =
-      true;
+    order.advanceRequested = true;
 
-    order.advancePercentage =
-      Number(
-        advancePercentage
-      );
+    order.advancePercentage = Number(advancePercentage);
 
-    order.advanceAmount =
-      advanceAmount;
+    order.advanceAmount = advanceAmount;
 
-    order.remainingAmount =
-      remainingAmount;
+    order.remainingAmount = remainingAmount;
 
-    order.paymentStatus =
-      "advanceRequested";
+    order.paymentStatus = "advanceRequested";
 
     await order.save();
 
     res.json({
-
       success: true,
 
-      message:
-        "Advance payment requested",
+      message: "Advance payment requested",
 
       order,
     });
-
   } catch (error) {
-
     res.status(500).json({
-
       success: false,
 
-      message:
-        error.message,
+      message: error.message,
     });
   }
 };

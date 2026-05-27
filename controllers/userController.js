@@ -104,14 +104,35 @@ export const registerUser = async (req, res) => {
     );
 
     // SEND WELCOME EMAIL
-    const emailResult = await sendEmail({
-      to: email,
-      subject: "Welcome to Smart Khata 🎉",
-      html: `
-    <h1>Hello ${name}</h1>
-  `,
-    });
+    try {
 
+      await sendEmail({
+        to: email,
+
+        subject: "Welcome to Smart Khata 🎉",
+
+        html: `
+      <div style="font-family:sans-serif">
+        <h2>Hello ${name}</h2>
+
+        <p>
+          Your Smart Khata account has been created successfully.
+        </p>
+
+        <p>
+          Welcome to Smart Khata 🚀
+        </p>
+      </div>
+    `,
+      });
+
+      console.log("WELCOME EMAIL SENT");
+
+    } catch (error) {
+
+      console.log("EMAIL FAILED");
+      console.log(error);
+    }
     console.log("EMAIL RESULT:");
     console.log(emailResult);
 

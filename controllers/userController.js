@@ -253,12 +253,22 @@ export const loginUser = async (req, res) => {
       },
     });
 
-  } catch (error) {
+  }  catch (error) {
+
+    console.log(
+      "LOGIN ERROR:",
+      error
+    );
+
     res.status(500).json({
+
       success: false,
-      message: "Server error",
+
+      message:
+        error.message ||
+        "Server error",
     });
-  }
+  } s
 };
 
 

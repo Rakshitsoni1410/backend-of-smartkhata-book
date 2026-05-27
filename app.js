@@ -48,7 +48,12 @@ app.use(
 // ==========================
 // API ROUTES
 // ==========================
-
+app.get("/ping", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "Server awake",
+  });
+});
 app.use("/api/user", userRouter);
 
 app.use("/api/product", productRouter);

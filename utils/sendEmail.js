@@ -1,43 +1,88 @@
 import nodemailer from "nodemailer";
 
-const emailService = process.env.EMAIL_SERVICE || "gmail";
-
 const transporter = nodemailer.createTransport({
-  service: emailService,
-  port: 587,
-  secure: false,
+  service: "gmail",
+
   auth: {
     user: process.env.EMAIL,
     pass: process.env.EMAIL_PASSWORD,
   },
 });
 
+// CHECK SMTP CONNECTION
+transporter.verify((error, success) => {
+  if (error) {
+    console.log("SMTP ERROR:", error);
+  } else {
+    console.log("SMTP READY");
+  }
+});
+
+// MAIN SEND FUNCTION
 const sendMail = async (to, subject, html) => {
   try {
+    // CHECK REQUIRED VALUES
+    if (!process.env.EMAIL || !process.env.EMAIL_PASSWORD) {
+      throw new Error("Email credentials missing in .env");
+    }
+
     const info = await transporter.sendMail({
-      from: `"smartkhata book" <${process.env.EMAIL}>`,
+      from: `"SmartKhata Book" <${process.env.EMAIL}>`,
       to,
       subject,
       html,
     });
 
-    console.log("Email sent:", info.messageId || info.response);
+    console.log("Email sent:", info.messageId);
+
     return info;
   } catch (error) {
-    console.error("Email sending failed:", error);
+    console.error("Email sending failed:");
+    console.log(error);
+
     return undefined;
   }
 };
 
-export const sendWelcomeEmail = async (to, subject, html) => sendMail(to, subject, html);
+// SEND WELCOME EMAIL
+export const sendWelcomeEmail = async (
+  to,
+  subject,
+  html
+) => {
+  return sendMail(to, subject, html);
+};
 
-export const sendEmail = async (toOrOptions, subject, html) => {
-  if (typeof toOrOptions === "object" && toOrOptions !== null) {
-    const { to, subject: mailSubject, html: mailHtml } = toOrOptions;
-    return sendMail(to, mailSubject, mailHtml);
+// GENERIC EMAIL FUNCTION
+export const sendEmail = async (
+  toOrOptions,
+  subject,
+  html
+) => {
+  // OBJECT FORMAT
+  if (
+    typeof toOrOptions === "object" &&
+    toOrOptions !== null
+  ) {
+    const {
+      to,
+      subject: mailSubject,
+      html: mailHtml,
+    } = toOrOptions;
+
+    return sendMail(
+      to,
+      mailSubject,
+      mailHtml
+    );
   }
 
-  return sendMail(toOrOptions, subject, html);
+  // NORMAL FORMAT
+  return sendMail(
+    toOrOptions,
+    subject,
+    html
+  );
 };
 
 export default sendEmail;

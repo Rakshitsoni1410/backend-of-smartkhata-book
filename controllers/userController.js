@@ -291,59 +291,97 @@ export const forgotPassword = async (req, res) => {
 
 // ───────────────── RESET PASSWORD ─────────────────
 export const resetPassword = async (req, res) => {
+
   try {
+
     const { token } = req.params;
 
     const { password } = req.body;
 
+    // PASSWORD REQUIRED
+    if (!password) {
+
+      return res.status(400).json({
+
+        success: false,
+
+        message:
+          "Password is required",
+      });
+    }
+
     // PASSWORD VALIDATION
     if (password.length < 6) {
+
       return res.status(400).json({
+
         success: false,
-        message: "Password must be at least 6 characters",
+
+        message:
+          "Password must be at least 6 characters",
       });
     }
 
     // FIND USER
-    const user = await userModel.findOne({
-      resetPasswordToken: token,
+    const user =
+      await userModel.findOne({
 
-      resetPasswordExpires: {
-        $gt: Date.now(),
-      },
-    });
+        resetPasswordToken:
+          token,
+
+        resetPasswordExpires: {
+          $gt: Date.now(),
+        },
+      });
 
     if (!user) {
+
       return res.status(400).json({
+
         success: false,
-        message: "Token invalid or expired",
+
+        message:
+          "Token invalid or expired",
       });
     }
 
     // HASH PASSWORD
-    user.password = await bcrypt.hash(password, 10);
+    user.password =
+      await bcrypt.hash(
+        password,
+        10
+      );
 
     // CLEAR TOKEN
-    user.resetPasswordToken = undefined;
+    user.resetPasswordToken =
+      undefined;
 
-    user.resetPasswordExpires = undefined;
+    user.resetPasswordExpires =
+      undefined;
 
     await user.save();
 
     res.json({
+
       success: true,
-      message: "Password reset successful",
+
+      message:
+        "Password reset successful",
     });
+
   } catch (error) {
+
     console.log(error);
 
     res.status(500).json({
+
       success: false,
-      message: "Server error",
+
+      message:
+        "Server error",
     });
   }
 };
-
 // ───────────────── GET WHOLESALERS ─────────────────
 export const getWholesalersByBusiness = async (req, res) => {
   try {

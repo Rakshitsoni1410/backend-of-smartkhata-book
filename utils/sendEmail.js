@@ -1,40 +1,38 @@
-import dotenv from "dotenv";
-dotenv.config();
+import nodemailer from "nodemailer";
 
-import { Resend } from "resend";
+const transporter =
+  nodemailer.createTransport({
 
-const resend = new Resend(
-  process.env.RESEND_API_KEY
-);
+    service: "gmail",
 
-const sendEmail = async ({
-  to,
-  subject,
-  html,
-}) => {
+    auth: {
 
-  try {
+      user:
+        process.env.EMAIL,
 
-    console.log(
-      "API KEY:",
-      process.env.RESEND_API_KEY
-    );
+      pass:
+        process.env.EMAIL_PASSWORD,
+    },
+  });
 
-    const response =
-      await resend.emails.send({
-        from: "onboarding@resend.dev",
-        to,
-        subject,
-        html,
-      });
+const sendEmail =
+  async ({
+    to,
+    subject,
+    html,
+  }) => {
 
-    console.log("Email Sent:", response);
+    await transporter.sendMail({
 
-  } catch (error) {
+      from:
+        process.env.EMAIL,
 
-    console.log(error);
+      to,
 
-  }
-};
+      subject,
+
+      html,
+    });
+  };
 
 export default sendEmail;

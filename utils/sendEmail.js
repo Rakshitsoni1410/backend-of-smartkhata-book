@@ -1,5 +1,13 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import nodemailer from "nodemailer";
 
+// DEBUG ENV VARIABLES
+console.log("EMAIL:", process.env.EMAIL);
+console.log("EMAIL_PASSWORD:", process.env.EMAIL_PASSWORD);
+
+// CREATE TRANSPORTER
 const transporter = nodemailer.createTransport({
   service: "gmail",
 
@@ -9,10 +17,11 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// CHECK SMTP CONNECTION
+// VERIFY SMTP
 transporter.verify((error, success) => {
   if (error) {
-    console.log("SMTP ERROR:", error);
+    console.log("SMTP ERROR:");
+    console.log(error);
   } else {
     console.log("SMTP READY");
   }
@@ -21,11 +30,12 @@ transporter.verify((error, success) => {
 // MAIN SEND FUNCTION
 const sendMail = async (to, subject, html) => {
   try {
-    // CHECK REQUIRED VALUES
+    // CHECK ENV
     if (!process.env.EMAIL || !process.env.EMAIL_PASSWORD) {
-      throw new Error("Email credentials missing in .env");
+      throw new Error("Email credentials missing");
     }
 
+    // SEND EMAIL
     const info = await transporter.sendMail({
       from: `"SmartKhata Book" <${process.env.EMAIL}>`,
       to,
@@ -33,12 +43,16 @@ const sendMail = async (to, subject, html) => {
       html,
     });
 
-    console.log("Email sent:", info.messageId);
+    console.log("EMAIL SENT SUCCESSFULLY");
+    console.log(info.messageId);
 
     return info;
+
   } catch (error) {
-    console.error("Email sending failed:");
+
+    console.log("EMAIL ERROR START");
     console.log(error);
+    console.log("EMAIL ERROR END");
 
     return undefined;
   }
@@ -59,11 +73,13 @@ export const sendEmail = async (
   subject,
   html
 ) => {
+
   // OBJECT FORMAT
   if (
     typeof toOrOptions === "object" &&
     toOrOptions !== null
   ) {
+
     const {
       to,
       subject: mailSubject,

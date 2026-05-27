@@ -104,27 +104,16 @@ export const registerUser = async (req, res) => {
     );
 
     // SEND WELCOME EMAIL
-    await sendEmail({
-      to: email, //email should be email but for testing purpose i am using my email
-
+    const emailResult = await sendEmail({
+      to: email,
       subject: "Welcome to Smart Khata 🎉",
-
       html: `
-        <div style="font-family:sans-serif">
-
-          <h2>Hello ${name}</h2>
-
-          <p>
-            Your Smart Khata account has been created successfully.
-          </p>
-
-          <p>
-            Welcome to Smart Khata 🚀
-          </p>
-
-        </div>
-      `,
+    <h1>Hello ${name}</h1>
+  `,
     });
+
+    console.log("EMAIL RESULT:");
+    console.log(emailResult);
 
     // RESPONSE
     res.status(201).json({

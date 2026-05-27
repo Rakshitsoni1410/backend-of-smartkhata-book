@@ -64,7 +64,7 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // CHECK USER
+    // CHECK EXISTING USER
     const userExist = await userModel.findOne({
       $or: [{ phone }, { email: email.toLowerCase() }],
     });
@@ -100,43 +100,38 @@ export const registerUser = async (req, res) => {
       process.env.JWT_SECRET,
       {
         expiresIn: "7d",
-      },
+      }
     );
 
-    // SEND WELCOME EMAIL
-   try {
+    // SEND EMAIL
+    try {
+      await sendEmail({
+        to: email,
+        subject: "Welcome to Smart Khata 🎉",
 
-  await sendEmail({
-    to: email,
+        html: `
+          <div style="font-family:sans-serif;padding:20px">
+            <h2>Hello ${name}</h2>
 
-    subject: "Welcome to Smart Khata 🎉",
+            <p>
+              Your Smart Khata account has been created successfully.
+            </p>
 
-    html: `
-      <div style="font-family:sans-serif">
+            <p>
+              Welcome to Smart Khata 🚀
+            </p>
+          </div>
+        `,
+      });
 
-        <h2>Hello ${name}</h2>
+      console.log("EMAIL SENT SUCCESSFULLY");
+    } catch (emailError) {
+      console.log("EMAIL FAILED");
+      console.log(emailError.message);
+    }
 
-        <p>
-          Your Smart Khata account has been created successfully.
-        </p>
-
-        <p>
-          Welcome to Smart Khata 🚀
-        </p>
-
-      </div>
-    `,
-  });
-
-  console.log("WELCOME EMAIL SENT");
-
-} catch (error) {
-
-  console.log("EMAIL FAILED");
-  console.log(error);
-}
     // RESPONSE
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: "User registered successfully",
       token,
@@ -148,15 +143,14 @@ export const registerUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
+    console.log("REGISTER ERROR:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error",
     });
   }
 };
-
 // ───────────────── LOGIN ─────────────────
 export const loginUser = async (req, res) => {
   try {

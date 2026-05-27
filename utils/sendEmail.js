@@ -9,19 +9,42 @@ const transporter = nodemailer.createTransport({
 });
 
 export const sendMail = async (email, name) => {
+  // SEND WELCOME EMAIL
   try {
-    const info = await transporter.sendMail({
-      from: `"Smart Khatabook" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Welcome to Smart Khatabook",
+    console.log("Sending email to:", email);
+
+    const emailResponse = await sendEmail({
+      to: email.toLowerCase().trim(),
+
+      subject: "Welcome to Smart Khata 🎉",
+
       html: `
-        <h2>Hello ${name}</h2>
-        <p>Your account created successfully.</p>
-      `,
+      <div style="font-family:Arial,sans-serif;padding:20px">
+        <h2>Hello ${name},</h2>
+
+        <p>
+          Your Smart Khata account has been created successfully.
+        </p>
+
+        <p>
+          Welcome to Smart Khata 🚀
+        </p>
+
+        <br/>
+
+        <p>
+          Thanks,<br/>
+          Smart Khata Team
+        </p>
+      </div>
+    `,
     });
 
-    console.log("MAIL SENT:", info.response);
-  } catch (err) {
-    console.log("MAIL ERROR:", err);
+    console.log("EMAIL SENT SUCCESS");
+    console.log(emailResponse);
+
+  } catch (error) {
+    console.log("EMAIL FAILED");
+    console.log(error.message);
   }
 };

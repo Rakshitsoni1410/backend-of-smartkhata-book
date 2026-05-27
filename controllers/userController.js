@@ -7,6 +7,7 @@ import sendEmail from "../utils/sendEmail.js";
 // ───────────────── REGISTER ─────────────────
 export const registerUser = async (req, res) => {
   try {
+     console.log("REGISTER API HIT");
     const {
       name,
       phone,

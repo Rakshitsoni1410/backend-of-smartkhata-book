@@ -22,17 +22,33 @@ const sendEmail =
     html,
   }) => {
 
-    await transporter.sendMail({
+    try {
 
-      from:
-        process.env.EMAIL,
+      const info =
+        await transporter.sendMail({
 
-      to,
+          from:
+            process.env.EMAIL,
 
-      subject,
+          to,
 
-      html,
-    });
+          subject,
+
+          html,
+        });
+
+      console.log(
+        "✅ Email Sent:",
+        info.response
+      );
+
+    } catch (error) {
+
+      console.log(
+        "❌ Email Error:",
+        error
+      );
+    }
   };
 
 export default sendEmail;

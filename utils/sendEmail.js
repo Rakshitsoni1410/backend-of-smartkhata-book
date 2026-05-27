@@ -43,16 +43,16 @@ const sendMail = async (to, subject, html) => {
       html,
     });
 
-    console.log("EMAIL SENT SUCCESSFULLY");
+
     console.log(info.messageId);
 
     return info;
 
   } catch (error) {
 
-    console.log("EMAIL ERROR START");
+
     console.log(error);
-    console.log("EMAIL ERROR END");
+  
 
     return undefined;
   }

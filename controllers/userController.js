@@ -104,15 +104,16 @@ export const registerUser = async (req, res) => {
     );
 
     // SEND WELCOME EMAIL
-    try {
+   try {
 
-      await sendEmail({
-        to: email,
+  await sendEmail({
+    to: email,
 
-        subject: "Welcome to Smart Khata 🎉",
+    subject: "Welcome to Smart Khata 🎉",
 
-        html: `
+    html: `
       <div style="font-family:sans-serif">
+
         <h2>Hello ${name}</h2>
 
         <p>
@@ -122,20 +123,18 @@ export const registerUser = async (req, res) => {
         <p>
           Welcome to Smart Khata 🚀
         </p>
+
       </div>
     `,
-      });
+  });
 
-      console.log("WELCOME EMAIL SENT");
+  console.log("WELCOME EMAIL SENT");
 
-    } catch (error) {
+} catch (error) {
 
-      console.log("EMAIL FAILED");
-      console.log(error);
-    }
-    console.log("EMAIL RESULT:");
-    console.log(emailResult);
-
+  console.log("EMAIL FAILED");
+  console.log(error);
+}
     // RESPONSE
     res.status(201).json({
       success: true,

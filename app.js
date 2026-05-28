@@ -10,14 +10,13 @@ import orderRoutes from "./routes/orderRoutes.js";
 import reviewRouter from "./routes/reviewRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
-
 import ledgerRoutes from "./routes/ledgerRoutes.js";
+
 // LOAD ENV
 dotenv.config();
 
 // APP CONFIG
 const app = express();
-
 const port = process.env.PORT || 4000;
 
 // DATABASE CONNECTION
@@ -39,33 +38,34 @@ app.use(express.urlencoded({ extended: true }));
 // CORS
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "*",
+    origin: [
+      "https://smartkhatabooks.netlify.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
     credentials: true,
-  }),
+  })
 );
 
 // ==========================
 // API ROUTES
 // ==========================
+
 app.get("/ping", (req, res) => {
   res.status(200).json({
     success: true,
     message: "Server awake",
   });
 });
+
 app.use("/api/user", userRouter);
-
 app.use("/api/product", productRouter);
-
 app.use("/api/orders", orderRoutes);
-
 app.use("/api/reviews", reviewRouter);
-
 app.use("/api/dashboard", dashboardRoutes);
-
 app.use("/api/employees", employeeRoutes);
-
 app.use("/api/ledger", ledgerRoutes);
+
 // ==========================
 // TEST ROUTE
 // ==========================
@@ -94,7 +94,6 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error(err.stack);
-
   res.status(500).json({
     success: false,
     message: "Internal Server Error",

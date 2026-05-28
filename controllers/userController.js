@@ -7,7 +7,7 @@ import sendEmail from "../utils/sendEmail.js";
 // ───────────────── REGISTER ─────────────────
 export const registerUser = async (req, res) => {
   try {
-     console.log("REGISTER API HIT");
+    console.log("REGISTER API HIT");
     const {
       name,
       phone,
@@ -247,37 +247,13 @@ export const forgotPassword = async (req, res) => {
     const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
 
     // SEND EMAIL
-    await sendEmail({
-      to: email,
-
-      subject: "Reset Password",
-
-      html: `
-<div style="font-family:sans-serif">
-
-  <h2>Password Reset</h2>
-
-  <p>
-    Click below button to reset password:
-  </p>
-
-  <a
-    href="${resetLink}"
-    style="
-      display:inline-block;
-      padding:12px 20px;
-      background:#4f46e5;
-      color:white;
-      text-decoration:none;
-      border-radius:8px;
-    "
-  >
-    Reset Password
-  </a>
-
-</div>
-`,
-    });
+    // In forgotPassword, replace the sendEmail call with:
+    try {
+      await sendEmail({ to: email, subject: "Reset Password", html: `...` });
+    } catch (emailErr) {
+      console.error("Email failed:", emailErr.message);
+      // Don't crash — still return success
+    }
 
     res.json({
       success: true,

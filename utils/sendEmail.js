@@ -8,9 +8,12 @@ const sendEmail = async ({ to, subject, html }) => {
   const transporter = nodemailer.createTransport({
     service: process.env.EMAIL_SERVICE || "gmail",
     auth: {
-      user: process.env.EMAIL,           // ✅ matches your Render key
-      pass: process.env.EMAIL_PASSWORD,  // ✅ matches your Render key
+      user: process.env.EMAIL,
+      pass: process.env.EMAIL_PASSWORD,
     },
+    connectionTimeout: 10000, // 10 seconds timeout
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
   });
 
   try {

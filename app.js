@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import sendEmail from "./utils/sendEmail.js";
 import connection from "./config/mongodb.js";
 import connectCloudinary from "./config/cloudinary.js";
 

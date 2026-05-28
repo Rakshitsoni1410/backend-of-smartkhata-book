@@ -2,21 +2,20 @@ import nodemailer from "nodemailer";
 
 const sendEmail = async ({ to, subject, html }) => {
   console.log("📧 sendEmail called");
-  console.log("EMAIL_USER:", process.env.EMAIL_USER);
-  console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "SET ✅" : "NOT SET ❌");
-  console.log("TO:", to);
+  console.log("EMAIL:", process.env.EMAIL ? "SET ✅" : "NOT SET ❌");
+  console.log("EMAIL_PASSWORD:", process.env.EMAIL_PASSWORD ? "SET ✅" : "NOT SET ❌");
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL,           // matches Render key
-    pass: process.env.EMAIL_PASSWORD,  // matches Render key
-  },
-});
+  const transporter = nodemailer.createTransport({
+    service: process.env.EMAIL_SERVICE || "gmail",
+    auth: {
+      user: process.env.EMAIL,           // ✅ matches your Render key
+      pass: process.env.EMAIL_PASSWORD,  // ✅ matches your Render key
+    },
+  });
 
   try {
     const info = await transporter.sendMail({
-      from: `"Smart Khata" <${process.env.EMAIL_USER}>`,
+      from: `"Smart Khata" <${process.env.EMAIL}>`,
       to,
       subject,
       html,
@@ -25,7 +24,6 @@ const transporter = nodemailer.createTransport({
     return info;
   } catch (err) {
     console.error("❌ Nodemailer error:", err.message);
-    console.error("❌ Full error:", err);
     throw err;
   }
 };

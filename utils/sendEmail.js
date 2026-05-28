@@ -6,13 +6,13 @@ const sendEmail = async ({ to, subject, html }) => {
   console.log("EMAIL_PASS:", process.env.EMAIL_PASS ? "SET ✅" : "NOT SET ❌");
   console.log("TO:", to);
 
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL,           // matches Render key
+    pass: process.env.EMAIL_PASSWORD,  // matches Render key
+  },
+});
 
   try {
     const info = await transporter.sendMail({

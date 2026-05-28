@@ -3,10 +3,9 @@ import nodemailer from "nodemailer";
 const sendEmail = async ({ to, subject, html }) => {
   const transporter = nodemailer.createTransport({
     service: "gmail",
-
     auth: {
       user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
+      pass: process.env.EMAIL_PASS, // Gmail App Password
     },
   });
 
@@ -17,6 +16,7 @@ const sendEmail = async ({ to, subject, html }) => {
     html,
   });
 
+  console.log("✅ Email sent:", info.messageId);
   return info;
 };
 

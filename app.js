@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import cron from "node-cron";
 import connection from "./config/mongodb.js";
 import connectCloudinary from "./config/cloudinary.js";
 
@@ -61,6 +62,19 @@ app.use(async (req, res, next) => {
   } catch (error) {
     console.error("DB connection failed:", error.message);
     res.status(500).json({ success: false, message: "Database connection failed" });
+  }
+});
+
+// ==========================
+// KEEP DB ALIVE (every 30 min)
+// ==========================
+
+cron.schedule("*/30 * * * *", async () => {
+  try {
+    await connection();
+    console.log("✅ DB keep-alive ping");
+  } catch (error) {
+    console.log("❌ DB keep-alive failed:", error.message);
   }
 });
 

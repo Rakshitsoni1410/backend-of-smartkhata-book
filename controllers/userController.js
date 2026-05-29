@@ -48,7 +48,7 @@ export const registerUser = async (req, res) => {
     }
 
     // PHONE VALIDATION
-const phoneRegex = /^\d{10}$/;
+    const phoneRegex = /^\d{10}$/;
 
     if (!phoneRegex.test(phone)) {
       return res.status(400).json({
@@ -125,9 +125,7 @@ const phoneRegex = /^\d{10}$/;
         `,
       });
 
-      console.log("EMAIL SENT SUCCESSFULLY");
     } catch (emailError) {
-      console.log("EMAIL FAILED");
       console.log(emailError.message);
     }
 
@@ -249,7 +247,15 @@ export const forgotPassword = async (req, res) => {
     // SEND EMAIL
     // In forgotPassword, replace the sendEmail call with:
     try {
-      await sendEmail({ to: email, subject: "Reset Password", html: `...` });
+      await sendEmail({
+        to: email,
+        subject: "Reset Password",
+        html: `
+    <h2>Password Reset</h2>
+    <p>Click the link below to reset your password:</p>
+    <a href="${resetLink}">${resetLink}</a>
+  `,
+      });
     } catch (emailErr) {
       console.error("Email failed:", emailErr.message);
       // Don't crash — still return success

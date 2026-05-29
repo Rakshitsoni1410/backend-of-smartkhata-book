@@ -1,7 +1,6 @@
 import nodemailer from "nodemailer";
 
 const sendEmail = async ({ to, subject, html }) => {
-  console.log("📧 sendEmail called");
   console.log("EMAIL:", process.env.EMAIL ? "SET ✅" : "NOT SET ❌");
   console.log("EMAIL_PASSWORD:", process.env.EMAIL_PASSWORD ? "SET ✅" : "NOT SET ❌");
 
@@ -23,7 +22,6 @@ const sendEmail = async ({ to, subject, html }) => {
       subject,
       html,
     });
-    console.log("✅ Email sent:", info.messageId);
     return info;
   } catch (err) {
     console.error("❌ Nodemailer error:", err.message);

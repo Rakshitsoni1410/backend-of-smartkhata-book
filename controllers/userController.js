@@ -48,7 +48,7 @@ export const registerUser = async (req, res) => {
     }
 
     // PHONE VALIDATION
-    const phoneRegex = /^[6-9]\d{9}$/;
+const phoneRegex = /^\d{10}$/;
 
     if (!phoneRegex.test(phone)) {
       return res.status(400).json({

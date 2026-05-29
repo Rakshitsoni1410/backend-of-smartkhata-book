@@ -23,8 +23,29 @@ const port = process.env.PORT || 4000;
 connectCloudinary();
 
 // ==========================
+// CORS OPTIONS
+// ==========================
+
+const corsOptions = {
+  origin: [
+    "https://smartkhatabooks.netlify.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+  ],
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+// ==========================
 // MIDDLEWARES
 // ==========================
+
+// HANDLE PREFLIGHT (must be first)
+app.options("*", cors(corsOptions));
+
+// CORS
+app.use(cors(corsOptions));
 
 // JSON PARSER
 app.use(express.json());
@@ -32,19 +53,7 @@ app.use(express.json());
 // URL ENCODED
 app.use(express.urlencoded({ extended: true }));
 
-// CORS
-app.use(
-  cors({
-    origin: [
-      "https://smartkhatabooks.netlify.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
-    credentials: true,
-  })
-);
-
-// DB CONNECTION MIDDLEWARE (runs before every request)
+// DB CONNECTION MIDDLEWARE
 app.use(async (req, res, next) => {
   try {
     await connection();

@@ -13,7 +13,8 @@ https://github.com/Rakshitsoni1410/smartkhatabook
 
 ## 🌐 Web Frontend Repository
 https://github.com/Rakshitsoni1410/web-smartkhatabook
-
+## live project 
+https://smartkhatabooks.netlify.app/
 ## ⚙️ Backend Repository
 https://github.com/Rakshitsoni1410/backend-of-smartkhata-book
 

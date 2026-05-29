@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 
-// Cache the connection across serverless invocations
 let cached = global.mongoose;
 
 if (!cached) {
@@ -8,19 +7,18 @@ if (!cached) {
 }
 
 const connection = async () => {
-  // Return existing connection if available
   if (cached.conn) {
     return cached.conn;
   }
 
-  // Reuse pending connection promise
   if (!cached.promise) {
+    console.log("Connecting to MongoDB...");
     cached.promise = mongoose.connect(process.env.MONGODB_URI, {
-      bufferCommands: false,      // ← This prevents the buffering timeout error
+      bufferCommands: false,
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     }).then((mongoose) => {
-      console.log("Database Connected");
+      console.log("✅ Database Connected");
       return mongoose;
     });
   }
@@ -28,9 +26,9 @@ const connection = async () => {
   try {
     cached.conn = await cached.promise;
   } catch (error) {
-    cached.promise = null;        // Reset so next call retries
-    console.log("Connection error:", error.message);
-    throw error;                  // Let the route handler return a proper 500
+    cached.promise = null;
+    console.error("❌ MongoDB connection error:", error.message);
+    throw error;
   }
 
   return cached.conn;

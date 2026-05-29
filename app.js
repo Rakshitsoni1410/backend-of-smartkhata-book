@@ -19,9 +19,6 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 4000;
 
-// DATABASE CONNECTION
-connection();
-
 // CLOUDINARY CONNECTION
 connectCloudinary();
 
@@ -46,6 +43,17 @@ app.use(
     credentials: true,
   })
 );
+
+// DB CONNECTION MIDDLEWARE (runs before every request)
+app.use(async (req, res, next) => {
+  try {
+    await connection();
+    next();
+  } catch (error) {
+    console.error("DB connection failed:", error.message);
+    res.status(500).json({ success: false, message: "Database connection failed" });
+  }
+});
 
 // ==========================
 // API ROUTES
@@ -107,3 +115,5 @@ app.use((err, req, res, next) => {
 app.listen(port, () => {
   console.log(`✅ Server running on http://localhost:${port}`);
 });
+
+export default app;

@@ -11,6 +11,7 @@ import reviewRouter from "./routes/reviewRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 import ledgerRoutes from "./routes/ledgerRoutes.js";
+import customerPortalRoutes from "./routes/customerPortalRoutes.js"; // ✅ NEW
 
 dotenv.config();
 
@@ -19,30 +20,18 @@ const port = process.env.PORT || 4000;
 
 connectCloudinary();
 
-// ==========================
-// MANUAL CORS — must be first
-// ==========================
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "https://smartkhatabooks.netlify.app");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Allow-Credentials", "true");
-
-  // respond to preflight immediately
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
+  if (req.method === "OPTIONS") return res.status(200).end();
   next();
 });
 
-// ==========================
-// MIDDLEWARES
-// ==========================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// DB CONNECTION MIDDLEWARE
 app.use(async (req, res, next) => {
   try {
     await connection();
@@ -53,9 +42,6 @@ app.use(async (req, res, next) => {
   }
 });
 
-// ==========================
-// ROUTES
-// ==========================
 app.get("/ping", (req, res) => {
   res.status(200).json({ success: true, message: "Server awake" });
 });
@@ -67,29 +53,21 @@ app.use("/api/reviews", reviewRouter);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/ledger", ledgerRoutes);
+app.use("/api/customer-portal", customerPortalRoutes); // ✅ NEW
 
 app.get("/api", (req, res) => {
   res.status(200).json({ success: true, message: "API Working" });
 });
 
-// ==========================
-// 404
-// ==========================
 app.use((req, res) => {
   res.status(404).json({ success: false, message: "Route not found" });
 });
 
-// ==========================
-// ERROR HANDLER
-// ==========================
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
-// ==========================
-// SERVER
-// ==========================
 app.listen(port, () => {
   console.log(`✅ Server running on http://localhost:${port}`);
 });

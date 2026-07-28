@@ -139,7 +139,6 @@ export const getOrdersForWholesaler = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
-
 export const updateOrderStatus = async (req, res) => {
   try {
     await connection();
@@ -149,6 +148,14 @@ export const updateOrderStatus = async (req, res) => {
       return res
         .status(404)
         .json({ success: false, message: "Order not found" });
+
+    // 🔒 Lock: once delivered, status cannot be changed
+    if (existingOrder.orderStatus === "delivered") {
+      return res.status(400).json({
+        success: false,
+        message: "Order is already delivered and cannot be updated",
+      });
+    }
 
     const updateData = { orderStatus: status };
 
@@ -178,7 +185,6 @@ export const updateOrderStatus = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
-
 export const payAdvance = async (req, res) => {
   try {
     await connection();

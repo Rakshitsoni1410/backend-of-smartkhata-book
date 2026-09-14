@@ -9,7 +9,9 @@ import {
   payAdvance,
   completePayment,
   requestAdvancePayment,
-requestFinalPayment,
+  requestFinalPayment,
+  getBillingForRetailer, // ← ADDED
+  getBillingForWholesaler, // ← ADDED
 } from "../controllers/orderController.js";
 
 const router = express.Router();
@@ -25,6 +27,12 @@ router.get("/wholesalers", getWholesalers);
 router.get("/retailer/:id", getOrdersForRetailer);
 
 router.get("/wholesaler/:id", getOrdersForWholesaler);
+
+// BILLING ← ADDED
+
+router.get("/billing/retailer/:id", getBillingForRetailer);
+
+router.get("/billing/wholesaler/:id", getBillingForWholesaler);
 
 // UPDATE STATUS
 

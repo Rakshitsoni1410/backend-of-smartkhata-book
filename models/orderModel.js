@@ -63,6 +63,12 @@ const orderSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // BILLING ← ADDED
+    invoiceNumber: {
+      type: String,
+      default: null,
+    },
+
     // ADVANCE PAYMENT
 
     advancePercentage: {

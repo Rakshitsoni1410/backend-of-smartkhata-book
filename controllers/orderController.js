@@ -3,6 +3,7 @@ import userModel from "../models/userModel.js";
 import productModel from "../models/productModel.js";
 import Ledger from "../models/ledgerModel.js";
 import connection from "../config/mongodb.js";
+import { getNextInvoiceNumber } from "../utils/generateInvoiceNumber.js"; // ← ADDED
 
 export const createOrder = async (req, res) => {
   try {
@@ -296,5 +297,77 @@ export const requestFinalPayment = async (req, res) => {
     res.json({ success: true, message: "Final payment requested", order });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// ───────────────── BILLING ───────────────── ← ADDED (everything below)
+
+// Assigns an invoiceNumber (format: WHOLESALER-DD-MM-YYYY-0001) to any
+// order that doesn't have one yet. `fallbackWholesalerName` is used when
+// the order's wholesalerId wasn't populated (i.e. when called from the
+// wholesaler's own billing view, where we already know who they are).
+async function ensureInvoiceNumbers(orders, fallbackWholesalerName) {
+  for (const order of orders) {
+    if (!order.invoiceNumber) {
+      const wholesalerName =
+        order.wholesalerId?.shopName ||
+        order.wholesalerId?.name ||
+        fallbackWholesalerName;
+
+      order.invoiceNumber = await getNextInvoiceNumber(wholesalerName, order.createdAt);
+      await order.save();
+    }
+  }
+  return orders;
+}
+
+// GET /api/orders/billing/retailer/:id
+// Bills THIS retailer owes to wholesalers.
+export const getBillingForRetailer = async (req, res) => {
+  try {
+    await connection();
+    const { id } = req.params;
+
+    const orders = await Order.find({ retailerId: id })
+      .populate("wholesalerId", "name shopName phone")
+      .sort({ createdAt: -1 });
+
+    await ensureInvoiceNumbers(orders);
+
+    res.status(200).json({ success: true, bills: orders });
+  } catch (error) {
+    console.log("BILLING (retailer) ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch billing",
+      error: error.message,
+    });
+  }
+};
+
+// GET /api/orders/billing/wholesaler/:id
+// Bills owed TO this wholesaler BY retailers.
+export const getBillingForWholesaler = async (req, res) => {
+  try {
+    await connection();
+    const { id } = req.params;
+
+    const wholesaler = await userModel.findById(id).select("name shopName");
+    const wholesalerName = wholesaler?.shopName || wholesaler?.name;
+
+    const orders = await Order.find({ wholesalerId: id })
+      .populate("retailerId", "name shopName phone")
+      .sort({ createdAt: -1 });
+
+    await ensureInvoiceNumbers(orders, wholesalerName);
+
+    res.status(200).json({ success: true, bills: orders });
+  } catch (error) {
+    console.log("BILLING (wholesaler) ERROR:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch billing",
+      error: error.message,
+    });
   }
 };

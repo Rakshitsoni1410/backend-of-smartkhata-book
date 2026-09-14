@@ -53,7 +53,19 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
     },
 
+    // ==========================================
+    // SINGLE SESSION CONTROL
+    // ==========================================
+
+    sessionVersion: {
+      type: Number,
+      default: 0,
+    },
+
+    // ==========================================
     // RESET PASSWORD
+    // ==========================================
+
     resetPasswordToken: {
       type: String,
     },
@@ -68,6 +80,7 @@ const userSchema = new mongoose.Schema(
 );
 
 const userModel =
-  mongoose.models.user || mongoose.model("user", userSchema);
+  mongoose.models.user ||
+  mongoose.model("user", userSchema);
 
 export default userModel;

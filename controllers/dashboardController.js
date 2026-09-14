@@ -10,6 +10,9 @@ export const getDashboardData = async (req, res) => {
     const { userId } = req.query;
 
     if (!userId) return res.status(400).json({ message: "UserId required" });
+    if (String(userId) !== String(req.userId) || role.toLowerCase() !== String(req.user.role).toLowerCase()) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
     const objectId = new mongoose.Types.ObjectId(userId);
 

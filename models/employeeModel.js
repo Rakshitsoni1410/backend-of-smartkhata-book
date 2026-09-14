@@ -49,6 +49,13 @@ const attendanceSchema = new mongoose.Schema(
 
 const employeeSchema = new mongoose.Schema(
   {
+    ownerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "user",
+      required: true,
+      index: true,
+    },
+
     name: {
       type: String,
       required: true,

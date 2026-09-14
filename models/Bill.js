@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import Counter from "./Counter.js";
 
 const billItemSchema = new mongoose.Schema({
   name:     { type: String, required: true },
@@ -40,12 +41,15 @@ billSchema.pre("save", function (next) {
   next();
 });
 
-billSchema.pre("save", async function (next) {
+billSchema.pre("save", async function () {
   if (!this.billNumber) {
-    const count = await mongoose.model("bill").countDocuments();
-    this.billNumber = `BILL-${String(count + 1).padStart(5, "0")}`;
+    const counter = await Counter.findOneAndUpdate(
+      { name: "bill-number" },
+      { $inc: { value: 1 } },
+      { new: true, upsert: true },
+    );
+    this.billNumber = `BILL-${String(counter.value).padStart(5, "0")}`;
   }
-  next();
 });
 
 const Bill = mongoose.models.bill || mongoose.model("bill", billSchema);

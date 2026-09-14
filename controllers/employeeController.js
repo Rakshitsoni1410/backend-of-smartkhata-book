@@ -6,7 +6,7 @@ import Employee from "../models/employeeModel.js";
 // ==========================
 export const getEmployees = async (req, res) => {
   try {
-    const employees = await Employee.find().sort({
+    const employees = await Employee.find({ ownerId: req.userId }).sort({
       createdAt: -1,
     });
 
@@ -43,7 +43,12 @@ export const addEmployee = async (req, res) => {
       });
     }
 
+    if (req.user.role !== "Retailer" && req.user.role !== "Wholesaler") {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     const employee = await Employee.create({
+      ownerId: req.userId,
       name,
       phone,
       category,
@@ -71,7 +76,7 @@ export const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne({ _id: id, ownerId: req.userId });
 
     if (!employee) {
       return res.status(404).json({
@@ -80,10 +85,16 @@ export const updateEmployee = async (req, res) => {
       });
     }
 
+    const editableFields = ["name", "phone", "category", "salary", "salaryDate", "notes", "status"];
+    const updates = Object.fromEntries(
+      editableFields
+        .filter((field) => Object.prototype.hasOwnProperty.call(req.body, field))
+        .map((field) => [field, req.body[field]]),
+    );
     const updatedEmployee =
-      await Employee.findByIdAndUpdate(
-        id,
-        req.body,
+      await Employee.findOneAndUpdate(
+        { _id: id, ownerId: req.userId },
+        updates,
         {
           new: true,
           runValidators: true,
@@ -111,7 +122,7 @@ export const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne({ _id: id, ownerId: req.userId });
 
     if (!employee) {
       return res.status(404).json({
@@ -120,7 +131,7 @@ export const deleteEmployee = async (req, res) => {
       });
     }
 
-    await Employee.findByIdAndDelete(id);
+    await Employee.findOneAndDelete({ _id: id, ownerId: req.userId });
 
     res.status(200).json({
       success: true,
@@ -148,7 +159,7 @@ export const addPayment = async (req, res) => {
       note,
     } = req.body;
 
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne({ _id: id, ownerId: req.userId });
 
     if (!employee) {
       return res.status(404).json({
@@ -157,23 +168,23 @@ export const addPayment = async (req, res) => {
       });
     }
 
+    const paymentAmount = Number(amount);
+
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment amount",
+      });
+    }
+
     const paymentData = {
-      amount,
+      amount: paymentAmount,
       method: method || "Cash",
       note: note || "",
       date: new Date(),
     };
 
     employee.payments.push(paymentData);
-
-    const paymentAmount = Number(amount);
-
-    if (paymentAmount <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment amount",
-      });
-    }
 
     employee.paid += paymentAmount;
 
@@ -205,7 +216,7 @@ export const addAttendance = async (req, res) => {
       note,
     } = req.body;
 
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne({ _id: id, ownerId: req.userId });
 
     if (!employee) {
       return res.status(404).json({
@@ -239,9 +250,13 @@ export const addAttendance = async (req, res) => {
 // SEARCH EMPLOYEE
 export const searchEmployees = async (req, res) => {
   try {
-    const keyword = req.query.keyword;
+    const keyword = String(req.query.keyword || "").trim();
+    if (!keyword) {
+      return res.status(400).json({ success: false, message: "Search keyword is required" });
+    }
 
     const employees = await Employee.find({
+      ownerId: req.userId,
       $or: [
         {
           name: {

@@ -18,6 +18,10 @@ export const getReportData = async (req, res) => {
       });
     }
 
+    if (String(userId) !== String(req.userId) || role?.toLowerCase() !== String(req.user.role).toLowerCase()) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(400).json({
         success: false,

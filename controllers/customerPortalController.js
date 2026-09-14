@@ -27,7 +27,7 @@ export const getDashboard = async (req, res) => {
 export const getMyRetailers = async (req, res) => {
     try {
         const customerId = req.user._id;
-        const retailers = await User.find({ role: "retailer", customers: customerId })
+        const retailers = await User.find({ role: "Retailer", customers: customerId })
             .select("name email phone shopName");
         if (!retailers.length) {
             const ids = await CustomerOrder.distinct("retailerId", { customerId });
@@ -44,13 +44,11 @@ export const getMyRetailers = async (req, res) => {
 export const getRetailerProducts = async (req, res) => {
     try {
         const { retailerId } = req.params;
+        if (req.user.role !== "Customer")
+            return res.status(403).json({ message: "Only customers can view retailer products" });
         const products = await Product.find({
-            $or: [
-                { userId: retailerId },
-                { owner: retailerId },
-                { createdBy: retailerId },
-            ],
-        }).select("name price category quantity unit description");
+            ownerId: retailerId,
+        }).select("name selling category stockQty unit description");
         res.json({ products });
     } catch (err) {
         res.status(500).json({ message: err.message });
@@ -60,18 +58,38 @@ export const getRetailerProducts = async (req, res) => {
 export const placeOrder = async (req, res) => {
     try {
         const customerId = req.user._id;
-        const { retailerId, items, totalAmount, note } = req.body;
-        if (!retailerId || !items?.length)
+        const { retailerId, items, note } = req.body;
+        if (req.user.role !== "Customer")
+            return res.status(403).json({ message: "Only customers can place orders" });
+        if (!retailerId || !Array.isArray(items) || !items.length)
             return res.status(400).json({ message: "retailerId and items are required" });
         const [retailer, customer] = await Promise.all([
-            User.findById(retailerId).select("name"),
+            User.findOne({ _id: retailerId, role: "Retailer" }).select("name"),
             User.findById(customerId).select("name"),
         ]);
+        if (!retailer || !customer)
+            return res.status(404).json({ message: "Retailer or customer not found" });
+        const productIds = items.map((item) => item.productId);
+        if (productIds.some((id) => !id))
+            return res.status(400).json({ message: "Each item must include a productId" });
+        const products = await Product.find({ _id: { $in: productIds }, ownerId: retailerId });
+        if (products.length !== new Set(productIds.map(String)).size)
+            return res.status(400).json({ message: "One or more products are invalid" });
+        const productById = new Map(products.map((product) => [String(product._id), product]));
+        const orderItems = items.map((item) => {
+            const product = productById.get(String(item.productId));
+            const quantity = Number(item.quantity);
+            if (!Number.isInteger(quantity) || quantity <= 0 || quantity > product.stockQty) {
+                throw new Error("Invalid product quantity");
+            }
+            return { productId: product._id, name: product.name, price: product.selling, quantity };
+        });
+        const calculatedTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const order = await CustomerOrder.create({
             customerId, retailerId,
             retailerName: retailer?.name,
             customerName: customer?.name,
-            items, totalAmount, note,
+            items: orderItems, totalAmount: calculatedTotal, note,
         });
         res.status(201).json({ message: "Order placed successfully", order });
     } catch (err) {
@@ -110,29 +128,52 @@ export const getMyBills = async (req, res) => {
 export const createBill = async (req, res) => {
     try {
         const retailerId = req.user._id;
-        if (req.user.role !== "retailer")
+        if (req.user.role !== "Retailer")
             return res.status(403).json({ message: "Only retailers can create bills" });
         const {
             customerId, items, subtotal, tax, taxRate,
             discount, totalAmount, amountPaid, dueDate, note,
         } = req.body;
-        if (!customerId || !totalAmount)
-            return res.status(400).json({ message: "customerId and totalAmount are required" });
+        if (!customerId || !Array.isArray(items) || !items.length)
+            return res.status(400).json({ message: "customerId and items are required" });
         const [retailer, customer] = await Promise.all([
             User.findById(retailerId).select("name"),
             User.findById(customerId).select("name"),
         ]);
+        if (!customer || customer.role !== "Customer")
+            return res.status(404).json({ message: "Customer not found" });
+        const cleanItems = items.map((item) => {
+            const price = Number(item.price);
+            const quantity = Number(item.quantity);
+            if (!item.name || !Number.isFinite(price) || price < 0 || !Number.isInteger(quantity) || quantity <= 0) {
+                throw new Error("Invalid bill item");
+            }
+            return { name: String(item.name).trim(), price, quantity };
+        });
+        const subtotalValue = cleanItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const taxRateValue = Number(taxRate || 0);
+        const discountValue = Number(discount || 0);
+        const amountPaidValue = Number(amountPaid || 0);
+        if (!Number.isFinite(taxRateValue) || taxRateValue < 0 || taxRateValue > 100 ||
+            !Number.isFinite(discountValue) || discountValue < 0 ||
+            !Number.isFinite(amountPaidValue) || amountPaidValue < 0) {
+            return res.status(400).json({ message: "Invalid bill amounts" });
+        }
+        const taxValue = subtotalValue * taxRateValue / 100;
+        const calculatedTotal = Math.max(0, subtotalValue + taxValue - discountValue);
+        if (amountPaidValue > calculatedTotal)
+            return res.status(400).json({ message: "Amount paid cannot exceed total amount" });
         const bill = await Bill.create({
             retailerId, customerId,
             retailerName: retailer?.name,
             customerName: customer?.name,
-            items: items || [],
-            subtotal: subtotal || totalAmount,
-            tax: tax || 0,
-            taxRate: taxRate || 0,
-            discount: discount || 0,
-            totalAmount,
-            amountPaid: amountPaid || 0,
+            items: cleanItems,
+            subtotal: subtotalValue,
+            tax: taxValue,
+            taxRate: taxRateValue,
+            discount: discountValue,
+            totalAmount: calculatedTotal,
+            amountPaid: amountPaidValue,
             dueDate, note,
         });
         res.status(201).json({ message: "Bill created", bill });
@@ -143,7 +184,7 @@ export const createBill = async (req, res) => {
 
 export const getSentBills = async (req, res) => {
     try {
-        if (req.user.role !== "retailer")
+        if (req.user.role !== "Retailer")
             return res.status(403).json({ message: "Access denied" });
         const bills = await Bill.find({ retailerId: req.user._id }).sort({ createdAt: -1 });
         res.json({ bills });
@@ -154,7 +195,7 @@ export const getSentBills = async (req, res) => {
 
 export const updateOrderStatus = async (req, res) => {
     try {
-        if (req.user.role !== "retailer")
+        if (req.user.role !== "Retailer")
             return res.status(403).json({ message: "Access denied" });
         const { status } = req.body;
         const order = await CustomerOrder.findOneAndUpdate(
@@ -171,7 +212,7 @@ export const updateOrderStatus = async (req, res) => {
 
 export const getIncomingOrders = async (req, res) => {
     try {
-        if (req.user.role !== "retailer")
+        if (req.user.role !== "Retailer")
             return res.status(403).json({ message: "Access denied" });
         const { status } = req.query;
         const filter = { retailerId: req.user._id };

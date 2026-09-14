@@ -5,6 +5,10 @@ import Ledger from "../models/ledgerModel.js";
 import connection from "../config/mongodb.js";
 import { getNextInvoiceNumber } from "../utils/generateInvoiceNumber.js";
 
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const isUser = (value, userId) => String(value) === String(userId);
+
 // =====================================================
 // CREATE ORDER
 // =====================================================
@@ -13,16 +17,24 @@ export const createOrder = async (req, res) => {
   try {
     await connection();
 
-    const { retailerId, productName, quantity, unit } = req.body;
+    const { productName, quantity, unit } = req.body;
 
-    if (!retailerId || !productName || !quantity) {
+    if (req.user.role !== "Retailer" || !productName || quantity === undefined) {
       return res.status(400).json({
         success: false,
         message: "Retailer, product name and quantity are required",
       });
     }
 
-    const cleanProductName = productName.trim();
+    const numericQuantity = Number(quantity);
+    if (!productName.trim() || !Number.isInteger(numericQuantity) || numericQuantity <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Product name and a positive whole quantity are required",
+      });
+    }
+
+    const cleanProductName = escapeRegex(productName.trim());
 
     const wholesalerUsers = await userModel.find({
       role: {
@@ -42,7 +54,7 @@ export const createOrder = async (req, res) => {
       },
 
       stockQty: {
-        $gte: Number(quantity),
+        $gte: numericQuantity,
       },
 
       inStock: true,
@@ -90,14 +102,14 @@ export const createOrder = async (req, res) => {
 
     const bestProduct = scoredProducts[0].product;
 
-    const totalAmount = Number(bestProduct.selling) * Number(quantity);
+    const totalAmount = Number(bestProduct.selling) * numericQuantity;
 
     // ==========================================
     // CREATE ORDER
     // ==========================================
 
     const order = new Order({
-      retailerId,
+      retailerId: req.userId,
 
       wholesalerId: bestProduct.ownerId,
 
@@ -109,7 +121,7 @@ export const createOrder = async (req, res) => {
 
       businessType: bestProduct.businessType,
 
-      quantity: Number(quantity),
+      quantity: numericQuantity,
 
       unit: unit || "pcs",
 
@@ -146,7 +158,7 @@ export const createOrder = async (req, res) => {
     // REDUCE STOCK
     // ==========================================
 
-    bestProduct.stockQty = bestProduct.stockQty - Number(quantity);
+    bestProduct.stockQty = bestProduct.stockQty - numericQuantity;
 
     if (bestProduct.stockQty <= 0) {
       bestProduct.inStock = false;
@@ -245,8 +257,11 @@ export const getOrdersForRetailer = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Retailer" || !isUser(req.params.id, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
     const orders = await Order.find({
-      retailerId: req.params.id,
+      retailerId: req.userId,
     })
       .populate("wholesalerId", "name shopName")
       .sort({
@@ -269,8 +284,11 @@ export const getOrdersForWholesaler = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Wholesaler" || !isUser(req.params.id, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
     const orders = await Order.find({
-      wholesalerId: req.params.id,
+      wholesalerId: req.userId,
     })
       .populate("retailerId", "name shopName")
       .sort({
@@ -295,6 +313,14 @@ export const updateOrderStatus = async (req, res) => {
 
     const { status } = req.body;
 
+    if (req.user.role !== "Wholesaler") {
+      return res.status(403).json({ success: false, message: "Only wholesalers can update order status" });
+    }
+    const allowedStatuses = ["approved", "onTheWay", "delivered", "rejected"];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: "Invalid order status" });
+    }
+
     const existingOrder = await Order.findById(req.params.id);
 
     if (!existingOrder) {
@@ -302,6 +328,9 @@ export const updateOrderStatus = async (req, res) => {
         success: false,
         message: "Order not found",
       });
+    }
+    if (!isUser(existingOrder.wholesalerId, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     // Delivered / completed orders
@@ -459,6 +488,10 @@ export const payAdvance = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Retailer") {
+      return res.status(403).json({ success: false, message: "Only retailers can pay for orders" });
+    }
+
     const order = await Order.findById(req.params.id);
 
     if (!order) {
@@ -466,6 +499,9 @@ export const payAdvance = async (req, res) => {
         success: false,
         message: "Order not found",
       });
+    }
+    if (!isUser(order.retailerId, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     // ======================================
@@ -657,6 +693,10 @@ export const completePayment = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Retailer") {
+      return res.status(403).json({ success: false, message: "Only retailers can pay for orders" });
+    }
+
     const order = await Order.findById(req.params.id);
 
     if (!order) {
@@ -665,6 +705,9 @@ export const completePayment = async (req, res) => {
 
         message: "Order not found",
       });
+    }
+    if (!isUser(order.retailerId, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     // ======================================
@@ -863,6 +906,10 @@ export const requestAdvancePayment = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Wholesaler") {
+      return res.status(403).json({ success: false, message: "Only wholesalers can request advance payment" });
+    }
+
     const { advancePercentage } = req.body;
 
     const order = await Order.findById(req.params.id);
@@ -872,6 +919,9 @@ export const requestAdvancePayment = async (req, res) => {
         success: false,
         message: "Order not found",
       });
+    }
+    if (!isUser(order.wholesalerId, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     const percentage = Number(advancePercentage);
@@ -923,6 +973,10 @@ export const requestFinalPayment = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Wholesaler") {
+      return res.status(403).json({ success: false, message: "Only wholesalers can request final payment" });
+    }
+
     const order = await Order.findById(req.params.id);
 
     if (!order) {
@@ -930,6 +984,9 @@ export const requestFinalPayment = async (req, res) => {
         success: false,
         message: "Order not found",
       });
+    }
+    if (!isUser(order.wholesalerId, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     if (order.orderStatus !== "delivered") {
@@ -1010,9 +1067,12 @@ export const getBillingForRetailer = async (req, res) => {
     await connection();
 
     const { id } = req.params;
+    if (req.user.role !== "Retailer" || !isUser(id, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
     const orders = await Order.find({
-      retailerId: id,
+      retailerId: req.userId,
 
       billSentToRetailer: true,
     })
@@ -1050,13 +1110,16 @@ export const getBillingForWholesaler = async (req, res) => {
     await connection();
 
     const { id } = req.params;
+    if (req.user.role !== "Wholesaler" || !isUser(id, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
 
     const wholesaler = await userModel.findById(id).select("name shopName");
 
     const wholesalerName = wholesaler?.shopName || wholesaler?.name || "SHOP";
 
     const orders = await Order.find({
-      wholesalerId: id,
+      wholesalerId: req.userId,
     })
       .populate("retailerId", "name shopName phone")
       .sort({
@@ -1091,6 +1154,10 @@ export const sendBillToRetailer = async (req, res) => {
   try {
     await connection();
 
+    if (req.user.role !== "Wholesaler") {
+      return res.status(403).json({ success: false, message: "Only wholesalers can send bills" });
+    }
+
     const { id } = req.params;
 
     const order = await Order.findById(id);
@@ -1101,6 +1168,9 @@ export const sendBillToRetailer = async (req, res) => {
 
         message: "Order not found",
       });
+    }
+    if (!isUser(order.wholesalerId, req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
     // ======================================

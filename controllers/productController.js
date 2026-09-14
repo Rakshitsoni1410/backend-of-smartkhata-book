@@ -7,6 +7,9 @@ export const getProductSuggestions = async (req, res) => {
   try {
     await connection();
     const { userId } = req.params;
+    if (String(userId) !== String(req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
     const user = await userModel.findById(userId);
     if (!user)
       return res
@@ -26,7 +29,6 @@ export const addProduct = async (req, res) => {
   try {
     await connection();
     const {
-      ownerId,
       name,
       category,
       description,
@@ -39,10 +41,16 @@ export const addProduct = async (req, res) => {
       weight,
       businessType,
     } = req.body;
+    if (!name?.trim() || !category?.trim()) {
+      return res.status(400).json({ success: false, message: "Name and category are required" });
+    }
+    if (![purchase, selling, stockQty, weight].every((value) => value === undefined || Number.isFinite(Number(value)))) {
+      return res.status(400).json({ success: false, message: "Product numeric values are invalid" });
+    }
     const profit = Number(selling) - Number(purchase);
 
     const product = new productModel({
-      ownerId,
+      ownerId: req.userId,
       name,
       category,
       description,
@@ -70,8 +78,11 @@ export const getProductsByOwner = async (req, res) => {
   try {
     await connection();
     const { userId } = req.params;
+    if (String(userId) !== String(req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
     const products = await productModel
-      .find({ ownerId: userId })
+      .find({ ownerId: req.userId })
       .sort({ createdAt: -1 });
     return res.status(200).json({ success: true, products });
   } catch (error) {
@@ -83,11 +94,32 @@ export const updateProduct = async (req, res) => {
   try {
     await connection();
     const { productId } = req.params;
-    const data = req.body;
-    data.profit = Number(data.selling || 0) - Number(data.purchase || 0);
+    const allowedFields = [
+      "name", "category", "description", "purchase", "selling", "stockQty",
+      "inStock", "inWeight", "weightUnit", "weight", "businessType",
+    ];
+    const data = Object.fromEntries(
+      allowedFields
+        .filter((field) => Object.prototype.hasOwnProperty.call(req.body, field))
+        .map((field) => [field, req.body[field]]),
+    );
+    if (data.name !== undefined && !String(data.name).trim()) {
+      return res.status(400).json({ success: false, message: "Product name is required" });
+    }
+    const current = await productModel.findOne({ _id: productId, ownerId: req.userId });
+    if (!current) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
+    const purchase = data.purchase ?? current.purchase;
+    const selling = data.selling ?? current.selling;
+    if (![purchase, selling, data.stockQty, data.weight].every((value) => value === undefined || Number.isFinite(Number(value)))) {
+      return res.status(400).json({ success: false, message: "Product numeric values are invalid" });
+    }
+    data.profit = Number(selling) - Number(purchase);
 
-    const updated = await productModel.findByIdAndUpdate(productId, data, {
+    const updated = await productModel.findOneAndUpdate({ _id: productId, ownerId: req.userId }, data, {
       new: true,
+      runValidators: true,
     });
     return res
       .status(200)
@@ -105,7 +137,10 @@ export const deleteProduct = async (req, res) => {
   try {
     await connection();
     const { productId } = req.params;
-    await productModel.findByIdAndDelete(productId);
+    const deleted = await productModel.findOneAndDelete({ _id: productId, ownerId: req.userId });
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: "Product not found" });
+    }
     return res
       .status(200)
       .json({ success: true, message: "Product deleted successfully" });

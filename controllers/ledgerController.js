@@ -4,7 +4,10 @@ import connection from "../config/mongodb.js";
 export const getLedgerEntries = async (req, res) => {
   try {
     await connection();
-    const entries = await Ledger.find({ userId: req.params.userId })
+    if (String(req.params.userId) !== String(req.userId)) {
+      return res.status(403).json({ success: false, message: "Access denied" });
+    }
+    const entries = await Ledger.find({ userId: req.userId })
       .sort({ createdAt: -1 })
       .populate("partyId", "name shopName");
 

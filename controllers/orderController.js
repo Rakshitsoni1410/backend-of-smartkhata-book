@@ -15,10 +15,19 @@ export const createOrder = async (req, res) => {
 
     const { retailerId, productName, quantity, unit } = req.body;
 
+    if (!retailerId || !productName || !quantity) {
+      return res.status(400).json({
+        success: false,
+        message: "Retailer, product name and quantity are required",
+      });
+    }
+
     const cleanProductName = productName.trim();
 
     const wholesalerUsers = await userModel.find({
-      role: { $regex: /^wholesaler$/i },
+      role: {
+        $regex: /^wholesaler$/i,
+      },
     });
 
     const wholesalerIds = wholesalerUsers.map((user) => user._id);
@@ -46,14 +55,17 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // ---------------------------------------
+    // ==========================================
     // AI PRODUCT SELECTION
-    // ---------------------------------------
+    // ==========================================
 
     const scoredProducts = products.map((product) => {
       const rating = Number(product.rating || 0);
+
       const reviews = Number(product.reviews || 0);
+
       const selling = Number(product.selling || 0);
+
       const stockQty = Number(product.stockQty || 0);
 
       let aiScore = 1000 - selling;
@@ -80,9 +92,9 @@ export const createOrder = async (req, res) => {
 
     const totalAmount = Number(bestProduct.selling) * Number(quantity);
 
-    // ---------------------------------------
+    // ==========================================
     // CREATE ORDER
-    // ---------------------------------------
+    // ==========================================
 
     const order = new Order({
       retailerId,
@@ -97,11 +109,11 @@ export const createOrder = async (req, res) => {
 
       businessType: bestProduct.businessType,
 
-      quantity,
+      quantity: Number(quantity),
 
-      unit,
+      unit: unit || "pcs",
 
-      pricePerUnit: bestProduct.selling,
+      pricePerUnit: Number(bestProduct.selling),
 
       totalAmount,
 
@@ -110,6 +122,10 @@ export const createOrder = async (req, res) => {
       advanceAmount: 0,
 
       remainingAmount: totalAmount,
+
+      advanceRequested: false,
+
+      finalPaymentRequested: false,
 
       advancePaid: false,
 
@@ -122,11 +138,13 @@ export const createOrder = async (req, res) => {
       billSentToRetailer: false,
 
       billSentAt: null,
+
+      paymentHistory: [],
     });
 
-    // ---------------------------------------
+    // ==========================================
     // REDUCE STOCK
-    // ---------------------------------------
+    // ==========================================
 
     bestProduct.stockQty = bestProduct.stockQty - Number(quantity);
 
@@ -138,9 +156,9 @@ export const createOrder = async (req, res) => {
 
     await order.save();
 
-    // ---------------------------------------
+    // ==========================================
     // RETAILER LEDGER
-    // ---------------------------------------
+    // ==========================================
 
     await Ledger.create({
       userId: retailerId,
@@ -156,9 +174,9 @@ export const createOrder = async (req, res) => {
       note: `Order placed for ${bestProduct.name}`,
     });
 
-    // ---------------------------------------
+    // ==========================================
     // WHOLESALER LEDGER
-    // ---------------------------------------
+    // ==========================================
 
     await Ledger.create({
       userId: bestProduct.ownerId,
@@ -230,9 +248,7 @@ export const getOrdersForRetailer = async (req, res) => {
     const orders = await Order.find({
       retailerId: req.params.id,
     })
-
       .populate("wholesalerId", "name shopName")
-
       .sort({
         createdAt: -1,
       });
@@ -256,9 +272,7 @@ export const getOrdersForWholesaler = async (req, res) => {
     const orders = await Order.find({
       wholesalerId: req.params.id,
     })
-
       .populate("retailerId", "name shopName")
-
       .sort({
         createdAt: -1,
       });
@@ -290,13 +304,14 @@ export const updateOrderStatus = async (req, res) => {
       });
     }
 
-    // Once delivered, manual status cannot change.
-    // Final payment can still change delivered -> completed.
-    if (existingOrder.orderStatus === "delivered") {
+    // Delivered / completed orders
+    // cannot be manually changed.
+    if (["delivered", "completed"].includes(existingOrder.orderStatus)) {
       return res.status(400).json({
         success: false,
 
-        message: "Order is already delivered and cannot be updated",
+        message:
+          "Order has already been delivered and cannot be manually updated",
       });
     }
 
@@ -304,9 +319,9 @@ export const updateOrderStatus = async (req, res) => {
       orderStatus: status,
     };
 
-    // ---------------------------------------
+    // ======================================
     // APPROVED
-    // ---------------------------------------
+    // ======================================
 
     if (status === "approved") {
       updateData.deliveryDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
@@ -322,17 +337,17 @@ export const updateOrderStatus = async (req, res) => {
       }
     }
 
-    // ---------------------------------------
+    // ======================================
     // ON THE WAY
-    // ---------------------------------------
+    // ======================================
 
     if (status === "onTheWay") {
       updateData.orderStatus = "onTheWay";
     }
 
-    // ---------------------------------------
+    // ======================================
     // DELIVERED
-    // ---------------------------------------
+    // ======================================
 
     if (status === "delivered") {
       updateData.orderStatus = "delivered";
@@ -340,9 +355,9 @@ export const updateOrderStatus = async (req, res) => {
       updateData.deliveredAt = new Date();
     }
 
-    // ---------------------------------------
+    // ======================================
     // REJECTED
-    // ---------------------------------------
+    // ======================================
 
     if (status === "rejected") {
       updateData.orderStatus = "rejected";
@@ -370,6 +385,73 @@ export const updateOrderStatus = async (req, res) => {
 };
 
 // =====================================================
+// DEMO PAYMENT HELPERS
+// =====================================================
+
+const ALLOWED_MOCK_PAYMENT_METHODS = ["upi", "card", "netbanking"];
+
+const validateMockPaymentPayload = (req, expectedAmount) => {
+  const { mockPayment, transactionId, paymentMethod, amount } = req.body || {};
+
+  if (mockPayment !== true) {
+    return {
+      error: "Demo payment confirmation is required",
+    };
+  }
+
+  const cleanTransactionId = String(transactionId || "").trim();
+
+  const cleanPaymentMethod = String(paymentMethod || "")
+    .trim()
+    .toLowerCase();
+
+  const clientAmount = Number(amount);
+
+  const serverAmount = Number(expectedAmount || 0);
+
+  if (!cleanTransactionId) {
+    return {
+      error: "Transaction ID is required",
+    };
+  }
+
+  if (!ALLOWED_MOCK_PAYMENT_METHODS.includes(cleanPaymentMethod)) {
+    return {
+      error: "Invalid payment method",
+    };
+  }
+
+  if (!Number.isFinite(clientAmount) || clientAmount < 0) {
+    return {
+      error: "Invalid payment amount",
+    };
+  }
+
+  // Never trust amount from frontend.
+  if (Math.abs(clientAmount - serverAmount) > 0.01) {
+    return {
+      error: "Payment amount does not match the order amount",
+    };
+  }
+
+  return {
+    transactionId: cleanTransactionId,
+
+    paymentMethod: cleanPaymentMethod,
+
+    amount: serverAmount,
+  };
+};
+
+const transactionAlreadyExists = async (transactionId) => {
+  return Boolean(
+    await Order.exists({
+      "paymentHistory.transactionId": transactionId,
+    }),
+  );
+};
+
+// =====================================================
 // PAY ADVANCE
 // =====================================================
 
@@ -386,6 +468,109 @@ export const payAdvance = async (req, res) => {
       });
     }
 
+    // ======================================
+    // ADVANCE MUST BE REQUESTED
+    // ======================================
+
+    if (!order.advanceRequested) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Advance payment has not been requested for this order",
+      });
+    }
+
+    // ======================================
+    // PREVENT DOUBLE PAYMENT
+    // ======================================
+
+    if (order.advancePaid) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Advance payment has already been completed",
+      });
+    }
+
+    const expectedAmount = Number(order.advanceAmount || 0);
+
+    if (expectedAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+
+        message: "No advance amount is due for this order",
+      });
+    }
+
+    // ======================================
+    // VALIDATE FAKE PAYMENT
+    // ======================================
+
+    const payment = validateMockPaymentPayload(req, expectedAmount);
+
+    if (payment.error) {
+      return res.status(400).json({
+        success: false,
+        message: payment.error,
+      });
+    }
+
+    // ======================================
+    // DUPLICATE TRANSACTION
+    // ======================================
+
+    if (await transactionAlreadyExists(payment.transactionId)) {
+      return res.status(409).json({
+        success: false,
+
+        message: "This transaction ID has already been used",
+      });
+    }
+
+    const paidAt = new Date();
+
+    if (!Array.isArray(order.paymentHistory)) {
+      order.paymentHistory = [];
+    }
+
+    // ======================================
+    // SAVE PAYMENT HISTORY
+    // ======================================
+
+    order.paymentHistory.push({
+      transactionId: payment.transactionId,
+
+      paymentType: "advance",
+
+      paymentMethod: payment.paymentMethod,
+
+      amount: payment.amount,
+
+      status: "success",
+
+      isMockPayment: true,
+
+      paidAt,
+    });
+
+    // ======================================
+    // LATEST PAYMENT DETAILS
+    // ======================================
+
+    order.lastPaymentTransactionId = payment.transactionId;
+
+    order.lastPaymentMethod = payment.paymentMethod;
+
+    order.lastPaymentType = "advance";
+
+    order.lastPaymentAmount = payment.amount;
+
+    order.lastPaymentAt = paidAt;
+
+    // ======================================
+    // ORDER PAYMENT STATE
+    // ======================================
+
     order.advancePaid = true;
 
     order.paymentStatus = "advancePaid";
@@ -393,6 +578,10 @@ export const payAdvance = async (req, res) => {
     order.orderStatus = "processing";
 
     await order.save();
+
+    // ======================================
+    // RETAILER LEDGER
+    // ======================================
 
     await Ledger.create({
       userId: order.retailerId,
@@ -403,10 +592,14 @@ export const payAdvance = async (req, res) => {
 
       type: "debit",
 
-      amount: order.advanceAmount,
+      amount: payment.amount,
 
-      note: "Advance payment paid",
+      note: `Advance payment paid • ${payment.transactionId}`,
     });
+
+    // ======================================
+    // WHOLESALER LEDGER
+    // ======================================
 
     await Ledger.create({
       userId: order.wholesalerId,
@@ -417,9 +610,9 @@ export const payAdvance = async (req, res) => {
 
       type: "credit",
 
-      amount: order.advanceAmount,
+      amount: payment.amount,
 
-      note: "Advance payment received",
+      note: `Advance payment received • ${payment.transactionId}`,
     });
 
     return res.json({
@@ -427,11 +620,30 @@ export const payAdvance = async (req, res) => {
 
       message: "Advance payment successful",
 
+      transaction: {
+        transactionId: payment.transactionId,
+
+        paymentType: "advance",
+
+        paymentMethod: payment.paymentMethod,
+
+        amount: payment.amount,
+
+        status: "success",
+
+        isMockPayment: true,
+
+        paidAt,
+      },
+
       order,
     });
   } catch (error) {
+    console.error("PAY ADVANCE ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: error.message,
     });
   }
@@ -450,9 +662,118 @@ export const completePayment = async (req, res) => {
     if (!order) {
       return res.status(404).json({
         success: false,
+
         message: "Order not found",
       });
     }
+
+    // ======================================
+    // FINAL PAYMENT MUST BE REQUESTED
+    // ======================================
+
+    if (!order.finalPaymentRequested) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Final payment has not been requested for this order",
+      });
+    }
+
+    // ======================================
+    // PREVENT DOUBLE PAYMENT
+    // ======================================
+
+    if (order.fullPaymentDone) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Final payment has already been completed",
+      });
+    }
+
+    // IMPORTANT:
+    // Save amount BEFORE setting
+    // remainingAmount to zero.
+
+    const finalPaymentAmount = Number(order.remainingAmount || 0);
+
+    if (finalPaymentAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+
+        message: "No remaining payment is due for this order",
+      });
+    }
+
+    // ======================================
+    // VALIDATE FAKE PAYMENT
+    // ======================================
+
+    const payment = validateMockPaymentPayload(req, finalPaymentAmount);
+
+    if (payment.error) {
+      return res.status(400).json({
+        success: false,
+
+        message: payment.error,
+      });
+    }
+
+    // ======================================
+    // DUPLICATE TRANSACTION
+    // ======================================
+
+    if (await transactionAlreadyExists(payment.transactionId)) {
+      return res.status(409).json({
+        success: false,
+
+        message: "This transaction ID has already been used",
+      });
+    }
+
+    const paidAt = new Date();
+
+    if (!Array.isArray(order.paymentHistory)) {
+      order.paymentHistory = [];
+    }
+
+    // ======================================
+    // SAVE FINAL PAYMENT HISTORY
+    // ======================================
+
+    order.paymentHistory.push({
+      transactionId: payment.transactionId,
+
+      paymentType: "final",
+
+      paymentMethod: payment.paymentMethod,
+
+      amount: payment.amount,
+
+      status: "success",
+
+      isMockPayment: true,
+
+      paidAt,
+    });
+
+    // ======================================
+    // LATEST PAYMENT DETAILS
+    // ======================================
+
+    order.lastPaymentTransactionId = payment.transactionId;
+
+    order.lastPaymentMethod = payment.paymentMethod;
+
+    order.lastPaymentType = "final";
+
+    order.lastPaymentAmount = payment.amount;
+
+    order.lastPaymentAt = paidAt;
+
+    // ======================================
+    // COMPLETE ORDER
+    // ======================================
 
     order.fullPaymentDone = true;
 
@@ -464,6 +785,10 @@ export const completePayment = async (req, res) => {
 
     await order.save();
 
+    // ======================================
+    // RETAILER LEDGER
+    // ======================================
+
     await Ledger.create({
       userId: order.retailerId,
 
@@ -473,10 +798,14 @@ export const completePayment = async (req, res) => {
 
       type: "debit",
 
-      amount: order.remainingAmount,
+      amount: finalPaymentAmount,
 
-      note: "Final payment completed",
+      note: `Final payment completed • ${payment.transactionId}`,
     });
+
+    // ======================================
+    // WHOLESALER LEDGER
+    // ======================================
 
     await Ledger.create({
       userId: order.wholesalerId,
@@ -487,9 +816,9 @@ export const completePayment = async (req, res) => {
 
       type: "credit",
 
-      amount: order.remainingAmount,
+      amount: finalPaymentAmount,
 
-      note: "Final payment received",
+      note: `Final payment received • ${payment.transactionId}`,
     });
 
     return res.json({
@@ -497,11 +826,30 @@ export const completePayment = async (req, res) => {
 
       message: "Full payment completed",
 
+      transaction: {
+        transactionId: payment.transactionId,
+
+        paymentType: "final",
+
+        paymentMethod: payment.paymentMethod,
+
+        amount: payment.amount,
+
+        status: "success",
+
+        isMockPayment: true,
+
+        paidAt,
+      },
+
       order,
     });
   } catch (error) {
+    console.error("COMPLETE PAYMENT ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: error.message,
     });
   }
@@ -528,7 +876,7 @@ export const requestAdvancePayment = async (req, res) => {
 
     const percentage = Number(advancePercentage);
 
-    if (percentage < 0 || percentage > 100) {
+    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
       return res.status(400).json({
         success: false,
 
@@ -592,6 +940,22 @@ export const requestFinalPayment = async (req, res) => {
       });
     }
 
+    if (order.fullPaymentDone) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Order payment is already complete",
+      });
+    }
+
+    if (order.finalPaymentRequested) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Final payment has already been requested",
+      });
+    }
+
     order.finalPaymentRequested = true;
 
     await order.save();
@@ -650,19 +1014,13 @@ export const getBillingForRetailer = async (req, res) => {
     const orders = await Order.find({
       retailerId: id,
 
-      // IMPORTANT:
-      // retailer only sees bills wholesaler sent
       billSentToRetailer: true,
     })
-
       .populate("wholesalerId", "name shopName phone")
-
       .sort({
         createdAt: -1,
       });
 
-    // Invoice should normally already exist,
-    // but this keeps old records safe.
     await ensureInvoiceNumbers(orders);
 
     return res.status(200).json({
@@ -685,7 +1043,6 @@ export const getBillingForRetailer = async (req, res) => {
 
 // =====================================================
 // WHOLESALER BILLING
-// WHOLESALER CAN SEE ALL OWN ORDERS
 // =====================================================
 
 export const getBillingForWholesaler = async (req, res) => {
@@ -701,9 +1058,7 @@ export const getBillingForWholesaler = async (req, res) => {
     const orders = await Order.find({
       wholesalerId: id,
     })
-
       .populate("retailerId", "name shopName phone")
-
       .sort({
         createdAt: -1,
       });
@@ -748,11 +1103,11 @@ export const sendBillToRetailer = async (req, res) => {
       });
     }
 
-    // ---------------------------------------
-    // MUST BE DELIVERED
-    // ---------------------------------------
+    // ======================================
+    // MUST BE DELIVERED OR COMPLETED
+    // ======================================
 
-    if (order.orderStatus !== "delivered") {
+    if (!["delivered", "completed"].includes(order.orderStatus)) {
       return res.status(400).json({
         success: false,
 
@@ -760,9 +1115,21 @@ export const sendBillToRetailer = async (req, res) => {
       });
     }
 
-    // ---------------------------------------
-    // MUST HAVE INVOICE
-    // ---------------------------------------
+    // ======================================
+    // PREVENT DUPLICATE SEND
+    // ======================================
+
+    if (order.billSentToRetailer) {
+      return res.status(400).json({
+        success: false,
+
+        message: "Bill has already been sent to retailer",
+      });
+    }
+
+    // ======================================
+    // GENERATE INVOICE
+    // ======================================
 
     if (!order.invoiceNumber) {
       const wholesaler = await userModel
@@ -777,21 +1144,9 @@ export const sendBillToRetailer = async (req, res) => {
       );
     }
 
-    // ---------------------------------------
-    // PREVENT DUPLICATE SEND
-    // ---------------------------------------
-
-    if (order.billSentToRetailer) {
-      return res.status(400).json({
-        success: false,
-
-        message: "Bill has already been sent to retailer",
-      });
-    }
-
-    // ---------------------------------------
-    // SEND
-    // ---------------------------------------
+    // ======================================
+    // SEND BILL
+    // ======================================
 
     order.billSentToRetailer = true;
 

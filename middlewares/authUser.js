@@ -87,17 +87,13 @@ const authUser = async (req, res, next) => {
     }
 
     // ========================================
-    // ATTACH USER ID
+    // ATTACH VERIFIED USER ID
     // ========================================
 
     req.userId = token_decode.id;
 
-    // Keep compatibility with your existing code
-    if (req.body) {
-      req.body.userId = token_decode.id;
-    }
-
     req.user = {
+      _id: token_decode.id,
       id: token_decode.id,
       role: token_decode.role,
       sessionVersion: token_decode.sessionVersion,

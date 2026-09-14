@@ -14,39 +14,40 @@ import {
   getBillingForRetailer, // ← ADDED
   getBillingForWholesaler, // ← ADDED
 } from "../controllers/orderController.js";
+import authUser from "../middlewares/authUser.js";
 
 const router = express.Router();
 
 // CREATE ORDER
 
-router.post("/create", createOrder);
+router.post("/create", authUser, createOrder);
 
 // GET ORDERS
 
-router.get("/wholesalers", getWholesalers);
+router.get("/wholesalers", authUser, getWholesalers);
 
-router.get("/retailer/:id", getOrdersForRetailer);
+router.get("/retailer/:id", authUser, getOrdersForRetailer);
 
-router.get("/wholesaler/:id", getOrdersForWholesaler);
+router.get("/wholesaler/:id", authUser, getOrdersForWholesaler);
 
 // BILLING ← ADDED
 
-router.get("/billing/retailer/:id", getBillingForRetailer);
+router.get("/billing/retailer/:id", authUser, getBillingForRetailer);
 
-router.get("/billing/wholesaler/:id", getBillingForWholesaler);
+router.get("/billing/wholesaler/:id", authUser, getBillingForWholesaler);
 
 // UPDATE STATUS
 
-router.patch("/:id/status", updateOrderStatus);
+router.patch("/:id/status", authUser, updateOrderStatus);
 
 // ADVANCE PAYMENT
 
-router.patch("/:id/pay-advance", payAdvance);
+router.patch("/:id/pay-advance", authUser, payAdvance);
 
 // COMPLETE PAYMENT
-router.patch("/:id/request-advance", requestAdvancePayment);
+router.patch("/:id/request-advance", authUser, requestAdvancePayment);
 
-router.patch("/:id/request-final-payment", requestFinalPayment);
-router.patch("/:id/complete-payment", completePayment);
-router.patch("/:id/send-bill", sendBillToRetailer);
+router.patch("/:id/request-final-payment", authUser, requestFinalPayment);
+router.patch("/:id/complete-payment", authUser, completePayment);
+router.patch("/:id/send-bill", authUser, sendBillToRetailer);
 export default router;

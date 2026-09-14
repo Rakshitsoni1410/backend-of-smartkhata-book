@@ -8,7 +8,7 @@ import {
   getWholesalersByBusiness,
 } from "../controllers/userController.js";
 
-import loginRateLimiter from "../middleware/loginRateLimiter.js";
+import loginRateLimiter from "../middlewares/loginRateLimiter.js";
 
 const router = express.Router();
 

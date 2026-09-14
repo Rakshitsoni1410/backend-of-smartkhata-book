@@ -9,7 +9,7 @@ import connection from "../config/mongodb.js";
 import {
   recordFailedLogin,
   resetLoginAttempts,
-} from "../middleware/loginRateLimiter.js";
+} from "../middlewares/loginRateLimiter.js";
 
 // ==========================================
 // REGISTER USER

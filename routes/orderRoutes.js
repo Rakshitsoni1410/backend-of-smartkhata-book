@@ -10,6 +10,7 @@ import {
   completePayment,
   requestAdvancePayment,
   requestFinalPayment,
+  sendBillToRetailer,
   getBillingForRetailer, // ← ADDED
   getBillingForWholesaler, // ← ADDED
 } from "../controllers/orderController.js";
@@ -47,5 +48,5 @@ router.patch("/:id/request-advance", requestAdvancePayment);
 
 router.patch("/:id/request-final-payment", requestFinalPayment);
 router.patch("/:id/complete-payment", completePayment);
-
+router.patch("/:id/send-bill", sendBillToRetailer);
 export default router;

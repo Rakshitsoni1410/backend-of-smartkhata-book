@@ -68,7 +68,15 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    billSentToRetailer: {
+      type: Boolean,
+      default: false,
+    },
 
+    billSentAt: {
+      type: Date,
+      default: null,
+    },
     // ADVANCE PAYMENT
 
     advancePercentage: {

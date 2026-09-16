@@ -437,8 +437,6 @@ export const loginUser = async (req, res) => {
 
 // ==========================================
 // FORGOT PASSWORD
-// ==========================================
-
 export const forgotPassword = async (req, res) => {
   try {
     await connection();
@@ -452,7 +450,9 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = String(email)
+      .trim()
+      .toLowerCase();
 
     const user = await userModel.findOne({
       email: normalizedEmail,
@@ -460,165 +460,409 @@ export const forgotPassword = async (req, res) => {
 
     // Do not reveal whether account exists
     if (!user) {
-      return res.json({
+      return res.status(200).json({
         success: true,
-
-        message: "If email exists, reset link sent",
+        message:
+          "If this email is registered, an OTP has been sent.",
       });
     }
 
-    // ======================================
-    // CREATE RESET TOKEN
-    // ======================================
+    // ==========================================
+    // RESEND COOLDOWN - 60 SECONDS
+    // ==========================================
 
-    const token = crypto.randomBytes(32).toString("hex");
+    if (user.resetPasswordOtpLastSentAt) {
+      const elapsed =
+        Date.now() -
+        new Date(
+          user.resetPasswordOtpLastSentAt
+        ).getTime();
 
-    user.resetPasswordToken = token;
+      if (elapsed < 60 * 1000) {
+        const remainingSeconds =
+          Math.ceil(
+            (60 * 1000 - elapsed) /
+              1000
+          );
 
-    user.resetPasswordExpires = Date.now() + 15 * 60 * 1000;
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${remainingSeconds} seconds before requesting another OTP.`,
+        });
+      }
+    }
+
+    // ==========================================
+    // GENERATE SECURE 6 DIGIT OTP
+    // ==========================================
+
+    const otp = crypto
+      .randomInt(100000, 1000000)
+      .toString();
+
+    // Never save plain OTP in MongoDB
+    const otpHash = crypto
+      .createHash("sha256")
+      .update(otp)
+      .digest("hex");
+
+    user.resetPasswordOtpHash =
+      otpHash;
+
+    // OTP valid for 10 minutes
+    user.resetPasswordOtpExpires =
+      new Date(
+        Date.now() +
+          10 * 60 * 1000
+      );
+
+    user.resetPasswordOtpAttempts =
+      0;
+
+    user.resetPasswordOtpLastSentAt =
+      new Date();
 
     await user.save();
 
-    // ======================================
-    // RESET LINK
-    // ======================================
-
-    const resetLink = `${process.env.CLIENT_URL}/#/reset-password/${token}`;
-
-    // ======================================
-    // SEND EMAIL
-    // ======================================
+    // ==========================================
+    // SEND OTP EMAIL
+    // ==========================================
 
     try {
       await sendEmail({
         to: normalizedEmail,
 
-        subject: "Reset Password",
+        subject:
+          "Smart Khata Password Reset OTP",
 
         html: `
-          <h2>Password Reset</h2>
+          <div
+            style="
+              font-family: Arial, sans-serif;
+              max-width: 500px;
+              margin: auto;
+              padding: 30px;
+              background: #ffffff;
+              border-radius: 12px;
+              border: 1px solid #e5e7eb;
+            "
+          >
+            <h2
+              style="
+                color: #111827;
+                margin-bottom: 10px;
+              "
+            >
+              Password Reset
+            </h2>
 
-          <p>
-            Click the link below to reset
-            your password:
-          </p>
+            <p style="color:#6b7280;">
+              Hello ${user.name || "User"},
+            </p>
 
-          <a href="${resetLink}">
-            ${resetLink}
-          </a>
+            <p style="color:#6b7280;">
+              Use the OTP below to reset your
+              Smart Khata password.
+            </p>
 
-          <p>
-            This link expires in 15 minutes.
-          </p>
+            <div
+              style="
+                font-size: 34px;
+                font-weight: bold;
+                letter-spacing: 8px;
+                text-align: center;
+                margin: 30px 0;
+                color: #4f46e5;
+              "
+            >
+              ${otp}
+            </div>
+
+            <p style="color:#6b7280;">
+              This OTP is valid for
+              <strong>10 minutes</strong>.
+            </p>
+
+            <p style="color:#ef4444;">
+              Do not share this OTP with anyone.
+            </p>
+
+            <p
+              style="
+                margin-top: 30px;
+                font-size: 12px;
+                color: #9ca3af;
+              "
+            >
+              If you did not request a password
+              reset, you can ignore this email.
+            </p>
+          </div>
         `,
       });
-    } catch (emailErr) {
-      console.error("RESET EMAIL ERROR:", emailErr.message);
+    } catch (emailError) {
+      console.error(
+        "RESET OTP EMAIL ERROR:",
+        emailError.message
+      );
+
+      // Clear unusable OTP
+      user.resetPasswordOtpHash =
+        null;
+
+      user.resetPasswordOtpExpires =
+        null;
+
+      user.resetPasswordOtpAttempts =
+        0;
+
+      await user.save();
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Unable to send OTP. Please try again.",
+      });
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
-
-      message: "Reset link sent",
+      message:
+        "OTP sent to your registered email.",
     });
   } catch (error) {
-    console.log("FORGOT PASSWORD ERROR:", error);
+    console.error(
+      "FORGOT PASSWORD ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message:
+        "Unable to process password reset request.",
     });
   }
 };
-
 // ==========================================
 // RESET PASSWORD
 // ==========================================
 
-export const resetPassword = async (req, res) => {
+export const resetPasswordWithOtp = async (
+  req,
+  res
+) => {
   try {
     await connection();
 
-    const { token } = req.params;
+    const {
+      email,
+      otp,
+      password,
+    } = req.body;
 
-    const { password } = req.body;
-
-    // ======================================
-    // PASSWORD VALIDATION
-    // ======================================
-
-    if (!password) {
+    if (
+      !email ||
+      !otp ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Password is required",
+        message:
+          "Email, OTP and new password are required",
       });
     }
 
     if (password.length < 6) {
       return res.status(400).json({
         success: false,
-        message: "Password must be at least 6 characters",
+        message:
+          "Password must be at least 6 characters",
       });
     }
 
-    // ======================================
-    // FIND VALID RESET TOKEN
-    // ======================================
-
-    const user = await userModel.findOne({
-      resetPasswordToken: token,
-
-      resetPasswordExpires: {
-        $gt: Date.now(),
-      },
-    });
-
-    if (!user) {
+    if (!/^\d{6}$/.test(String(otp))) {
       return res.status(400).json({
         success: false,
-        message: "Token invalid or expired",
+        message:
+          "OTP must be a 6-digit number",
       });
     }
 
-    // ======================================
-    // UPDATE PASSWORD
-    // ======================================
+    const normalizedEmail =
+      String(email)
+        .trim()
+        .toLowerCase();
 
-    user.password = await bcrypt.hash(password, 10);
+    const user =
+      await userModel.findOne({
+        email:
+          normalizedEmail,
+      });
 
-    user.resetPasswordToken = undefined;
+    if (
+      !user ||
+      !user.resetPasswordOtpHash ||
+      !user.resetPasswordOtpExpires
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "OTP is invalid or expired",
+      });
+    }
 
-    user.resetPasswordExpires = undefined;
+    // ==========================================
+    // CHECK EXPIRY
+    // ==========================================
 
-    // ======================================
-    // IMPORTANT SECURITY:
-    //
-    // Password reset destroys any existing
-    // login session on other devices.
-    // ======================================
+    if (
+      new Date(
+        user.resetPasswordOtpExpires
+      ).getTime() <= Date.now()
+    ) {
+      user.resetPasswordOtpHash =
+        null;
 
-    user.sessionVersion = Number(user.sessionVersion || 0) + 1;
+      user.resetPasswordOtpExpires =
+        null;
+
+      user.resetPasswordOtpAttempts =
+        0;
+
+      await user.save();
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "OTP has expired. Please request a new OTP.",
+      });
+    }
+
+    // ==========================================
+    // LIMIT OTP ATTEMPTS
+    // ==========================================
+
+    if (
+      Number(
+        user.resetPasswordOtpAttempts ||
+          0
+      ) >= 5
+    ) {
+      user.resetPasswordOtpHash =
+        null;
+
+      user.resetPasswordOtpExpires =
+        null;
+
+      user.resetPasswordOtpAttempts =
+        0;
+
+      await user.save();
+
+      return res.status(429).json({
+        success: false,
+        message:
+          "Too many incorrect attempts. Please request a new OTP.",
+      });
+    }
+
+    // ==========================================
+    // HASH ENTERED OTP
+    // ==========================================
+
+    const enteredOtpHash =
+      crypto
+        .createHash("sha256")
+        .update(String(otp))
+        .digest("hex");
+
+    if (
+      enteredOtpHash !==
+      user.resetPasswordOtpHash
+    ) {
+      user.resetPasswordOtpAttempts =
+        Number(
+          user.resetPasswordOtpAttempts ||
+            0
+        ) + 1;
+
+      await user.save();
+
+      const attemptsLeft =
+        Math.max(
+          5 -
+            user.resetPasswordOtpAttempts,
+          0
+        );
+
+      return res.status(400).json({
+        success: false,
+        message: `Incorrect OTP. ${attemptsLeft} attempt(s) remaining.`,
+      });
+    }
+
+    // NEW PASSWORD
+
+    const samePassword =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
+
+    if (samePassword) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "New password must be different from your current password",
+      });
+    }
+
+    user.password =
+      await bcrypt.hash(
+        password,
+        10
+      );
+
+    // Clear OTP
+    user.resetPasswordOtpHash =
+      null;
+
+    user.resetPasswordOtpExpires =
+      null;
+
+    user.resetPasswordOtpAttempts =
+      0;
+
+    user.resetPasswordOtpLastSentAt =
+      null;
+
+    // Logout all existing sessions
+    user.sessionVersion =
+      Number(
+        user.sessionVersion || 0
+      ) + 1;
 
     await user.save();
 
-    return res.json({
+    return res.status(200).json({
       success: true,
-
-      message: "Password reset successful. Please login again.",
+      message:
+        "Password reset successfully. Please login with your new password.",
     });
   } catch (error) {
-    console.log("RESET PASSWORD ERROR:", error);
+    console.error(
+      "RESET PASSWORD OTP ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Server error",
+      message:
+        "Unable to reset password.",
     });
   }
 };
-
-// ==========================================
 // GET WHOLESALERS
-// ==========================================
 
 export const getWholesalersByBusiness = async (req, res) => {
   try {

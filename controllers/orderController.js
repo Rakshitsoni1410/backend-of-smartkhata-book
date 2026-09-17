@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 import Order from "../models/orderModel.js";
 
@@ -13,6 +12,10 @@ const isUser = (value, userId) => String(value) === String(userId);
 
 // =====================================================
 // CREATE ORDER
+// =====================================================
+// CREATE ORDER
+// SMART + FAIR WHOLESALER SELECTION
+// TRANSACTION SAFE
 // =====================================================
 // CREATE ORDER
 // SMART + FAIR WHOLESALER SELECTION
@@ -50,7 +53,7 @@ export const createOrder = async (req, res) => {
     }
 
     // =====================================================
-    // 2. REQUEST VALIDATION
+    // 2. REQUEST
     // =====================================================
 
     const { productName, quantity, unit } = req.body || {};
@@ -82,7 +85,7 @@ export const createOrder = async (req, res) => {
     }
 
     // =====================================================
-    // 3. SAFE EXACT PRODUCT MATCHING
+    // 3. SAFE EXACT PRODUCT MATCH
     // =====================================================
 
     const escapedProductName = cleanProductName.replace(
@@ -93,7 +96,7 @@ export const createOrder = async (req, res) => {
     const exactProductRegex = new RegExp(`^${escapedProductName}$`, "i");
 
     // =====================================================
-    // 4. HELPER FOR HTTP ERRORS
+    // 4. ERROR HELPER
     // =====================================================
 
     const throwHttpError = (statusCode, message) => {
@@ -105,7 +108,7 @@ export const createOrder = async (req, res) => {
     };
 
     // =====================================================
-    // 5. START MONGODB SESSION
+    // 5. START SESSION
     // =====================================================
 
     session = await mongoose.startSession();
@@ -114,17 +117,11 @@ export const createOrder = async (req, res) => {
 
     // =====================================================
     // 6. TRANSACTION
-    //
-    // IMPORTANT:
-    // Everything related to selection is done inside
-    // withTransaction.
-    //
-    // If MongoDB retries this callback because of a
-    // concurrent order, wholesaler scores are recalculated.
     // =====================================================
 
     await session.withTransaction(async () => {
-      // Very important if MongoDB retries callback
+      // Important because MongoDB may retry
+      // this callback after a write conflict.
       transactionResult = null;
 
       // =================================================
@@ -149,13 +146,6 @@ export const createOrder = async (req, res) => {
 
       // =================================================
       // 8. FIND ELIGIBLE PRODUCTS
-      //
-      // Must:
-      // - exactly match product
-      // - belong to wholesaler
-      // - price > 0
-      // - have enough stock
-      // - be in stock
       // =================================================
 
       const rawProducts = await productModel
@@ -189,15 +179,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 9. ONE PRODUCT LISTING PER WHOLESALER
-      //
-      // If duplicate listings exist:
-      //
-      // lower price wins.
-      //
-      // If same price:
-      //
-      // higher stock wins.
+      // 9. ONLY ONE LISTING PER WHOLESALER
       // =================================================
 
       const productByWholesaler = new Map();
@@ -230,6 +212,9 @@ export const createOrder = async (req, res) => {
 
         const existingStock = Number(existing.stockQty || 0);
 
+        // Prefer lower price.
+        // If same price, prefer higher stock.
+
         if (
           price < existingPrice ||
           (price === existingPrice && stock > existingStock)
@@ -246,12 +231,6 @@ export const createOrder = async (req, res) => {
 
       // =================================================
       // 10. ORDER HISTORY
-      //
-      // lifetimeOrders:
-      // used for new-wholesaler opportunity.
-      //
-      // recentOrders:
-      // used for fairness.
       // =================================================
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -265,6 +244,8 @@ export const createOrder = async (req, res) => {
               $in: candidateOwnerIds,
             },
 
+            // Rejected orders do not
+            // count for fairness/history.
             orderStatus: {
               $ne: "rejected",
             },
@@ -315,15 +296,7 @@ export const createOrder = async (req, res) => {
       const minPrice = Math.min(...allPrices);
 
       // =================================================
-      // 12. PRICE PROTECTION
-      //
-      // Seller cannot be more than 10%
-      // above cheapest eligible seller.
-      //
-      // Example:
-      //
-      // cheapest ₹100
-      // max allowed ₹110
+      // 12. 10% PRICE PROTECTION
       // =================================================
 
       const maxAllowedPrice = Number((minPrice * 1.1).toFixed(2));
@@ -337,17 +310,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 13. IMPORTANT:
-      // PRICE SCORE ONLY USES PROTECTED SELLERS
-      //
-      // Example:
-      //
-      // 100
-      // 105
-      // 109
-      // 1000
-      //
-      // ₹1000 seller should NOT distort scoring.
+      // 13. PRICE NORMALIZATION
       // =================================================
 
       const protectedPrices = candidateProducts.map((product) =>
@@ -359,7 +322,7 @@ export const createOrder = async (req, res) => {
       const scoringMaxPrice = Math.max(...protectedPrices);
 
       // =================================================
-      // 14. REVIEW NORMALIZATION
+      // 14. REVIEWS
       // =================================================
 
       const maxReviews = Math.max(
@@ -371,19 +334,17 @@ export const createOrder = async (req, res) => {
       );
 
       // =================================================
-      // 15. SMART SCORING
+      // 15. SMART SCORE
       //
-      // QUALITY:
+      // Price    45%
+      // Rating   30%
+      // Stock    20%
+      // Reviews   5%
       //
-      // Price       45%
-      // Rating      30%
-      // Stock       20%
-      // Reviews      5%
+      // Final:
       //
-      // FINAL:
-      //
-      // Quality     75%
-      // Fairness    25%
+      // Quality  75%
+      // Fairness 25%
       // =================================================
 
       const scoredCandidates = candidateProducts.map((product) => {
@@ -391,7 +352,7 @@ export const createOrder = async (req, res) => {
 
         const stock = Number(product.stockQty || 0);
 
-        const rating = Number(product.rating || 0);
+        const rawRating = Number(product.rating || 0);
 
         const reviews = Math.max(Number(product.reviews || 0), 0);
 
@@ -403,12 +364,9 @@ export const createOrder = async (req, res) => {
           recentOrders: 0,
         };
 
-        // =============================================
+        // ============================================
         // PRICE SCORE
-        //
-        // Cheapest = closer to 1
-        // More expensive = closer to 0
-        // =============================================
+        // ============================================
 
         const priceScore =
           scoringMaxPrice === scoringMinPrice
@@ -423,36 +381,29 @@ export const createOrder = async (req, res) => {
                 ),
               );
 
-        // =============================================
+        // ============================================
         // RATING SCORE
         //
-        // New wholesaler without rating gets 0.60
-        // instead of unfairly receiving 0.
-        // =============================================
+        // New sellers get neutral 0.60.
+        // ============================================
 
         let ratingScore = 0.6;
 
-        if (Number.isFinite(rating) && rating > 0) {
-          ratingScore = Math.max(0, Math.min(1, rating / 5));
+        if (Number.isFinite(rawRating) && rawRating > 0) {
+          ratingScore = Math.max(0, Math.min(1, rawRating / 5));
         }
 
-        // =============================================
+        // ============================================
         // STOCK SCORE
-        //
-        // 3x requested quantity = full stock score.
-        //
-        // Huge stock does not infinitely increase score.
-        // =============================================
+        // ============================================
 
         const idealStock = Math.max(numericQuantity * 3, 1);
 
         const stockScore = Math.max(0, Math.min(1, stock / idealStock));
 
-        // =============================================
+        // ============================================
         // REVIEW SCORE
-        //
-        // New/no reviews = neutral score.
-        // =============================================
+        // ============================================
 
         let reviewScore = 0.35;
 
@@ -467,9 +418,9 @@ export const createOrder = async (req, res) => {
           );
         }
 
-        // =============================================
-        // QUALITY SCORE
-        // =============================================
+        // ============================================
+        // QUALITY
+        // ============================================
 
         const qualityScore =
           priceScore * 0.45 +
@@ -477,23 +428,15 @@ export const createOrder = async (req, res) => {
           stockScore * 0.2 +
           reviewScore * 0.05;
 
-        // =============================================
-        // FAIRNESS SCORE
-        //
-        // Recent orders:
-        //
-        // 0 → 1.00
-        // 1 → 0.50
-        // 2 → 0.33
-        // 3 → 0.25
-        // 5 → 0.16
-        // =============================================
+        // ============================================
+        // FAIRNESS
+        // ============================================
 
         const fairnessScore = 1 / (1 + history.recentOrders);
 
-        // =============================================
-        // FINAL SCORE
-        // =============================================
+        // ============================================
+        // FINAL
+        // ============================================
 
         const finalScore = qualityScore * 0.75 + fairnessScore * 0.25;
 
@@ -504,7 +447,7 @@ export const createOrder = async (req, res) => {
 
           stock,
 
-          rating,
+          rating: rawRating,
 
           reviews,
 
@@ -529,7 +472,7 @@ export const createOrder = async (req, res) => {
       });
 
       // =================================================
-      // 16. BEST QUALITY SCORE
+      // 16. BEST QUALITY
       // =================================================
 
       const bestQuality = Math.max(
@@ -537,19 +480,7 @@ export const createOrder = async (req, res) => {
       );
 
       // =================================================
-      // 17. NEW WHOLESALER PROTECTION
-      //
-      // New seller gets priority only if:
-      //
-      // lifetime orders = 0
-      //
-      // AND
-      //
-      // already inside 10% price limit
-      //
-      // AND
-      //
-      // quality >= 70% of best seller.
+      // 17. NEW WHOLESALER OPPORTUNITY
       // =================================================
 
       const newWholesalerCandidates = scoredCandidates
@@ -563,21 +494,15 @@ export const createOrder = async (req, res) => {
             return b.qualityScore - a.qualityScore;
           }
 
-          // Same quality:
-          // cheaper new seller first
-
           if (a.price !== b.price) {
             return a.price - b.price;
           }
-
-          // Same again:
-          // more stock first
 
           return b.stock - a.stock;
         });
 
       // =================================================
-      // 18. NORMAL BALANCED RANKING
+      // 18. NORMAL FAIR SELECTION
       // =================================================
 
       const normalCandidates = [...scoredCandidates].sort((a, b) => {
@@ -585,31 +510,19 @@ export const createOrder = async (req, res) => {
           return b.finalScore - a.finalScore;
         }
 
-        // Fewer recent orders wins tie
-
         if (a.recentOrders !== b.recentOrders) {
           return a.recentOrders - b.recentOrders;
         }
-
-        // Cheaper wins next tie
 
         if (a.price !== b.price) {
           return a.price - b.price;
         }
 
-        // More stock wins final tie
-
         return b.stock - a.stock;
       });
 
       // =================================================
-      // 19. BUILD FINAL CANDIDATE QUEUE
-      //
-      // Competitive new sellers first.
-      //
-      // Then normal rankings.
-      //
-      // No duplicate products.
+      // 19. CANDIDATE QUEUE
       // =================================================
 
       const candidateQueue = [];
@@ -642,13 +555,6 @@ export const createOrder = async (req, res) => {
 
       // =================================================
       // 20. ATOMIC STOCK RESERVATION
-      //
-      // IMPORTANT PRICE PROTECTION:
-      //
-      // selling must STILL equal the price that was scored.
-      //
-      // If seller changes price during checkout,
-      // this candidate fails and next seller is tried.
       // =================================================
 
       let selectedCandidate = null;
@@ -668,7 +574,8 @@ export const createOrder = async (req, res) => {
               $gte: numericQuantity,
             },
 
-            // Price cannot silently change
+            // Price must still equal
+            // the price that was scored.
             selling: Number(candidate.price),
           },
 
@@ -701,7 +608,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 21. SET inStock FALSE IF STOCK IS ZERO
+      // 21. OUT OF STOCK
       // =================================================
 
       if (Number(updatedProduct.stockQty) <= 0) {
@@ -723,7 +630,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 22. FINAL SELECTED PRODUCT DETAILS
+      // 22. SELECTED PRODUCT
       // =================================================
 
       const selectedProduct = selectedCandidate.product;
@@ -733,7 +640,7 @@ export const createOrder = async (req, res) => {
       const totalAmount = Number((selectedPrice * numericQuantity).toFixed(2));
 
       // =================================================
-      // 23. SAFE UNIT
+      // 23. UNIT
       // =================================================
 
       const requestedUnit = typeof unit === "string" ? unit.trim() : "";
@@ -744,80 +651,88 @@ export const createOrder = async (req, res) => {
       // =================================================
       // 24. CREATE ORDER
       //
-      // Array form is intentional because Mongoose
-      // transactions support create([...], { session }).
+      // IMPORTANT:
+      //
+      // We do NOT use:
+      //
+      // Order.create([doc], { session })
+      //
+      // That caused your Mongoose ordered:true error.
+      //
+      // Single document + save({ session }) is simpler.
       // =================================================
 
-      const orderDocuments = await Order.create(
+      const createdOrder = new Order({
+        retailerId,
+
+        wholesalerId: selectedProduct.ownerId,
+
+        productId: selectedProduct._id,
+
+        productName: selectedProduct.name,
+
+        category: selectedProduct.category || "",
+
+        businessType: selectedProduct.businessType || "",
+
+        quantity: numericQuantity,
+
+        unit: selectedUnit,
+
+        pricePerUnit: selectedPrice,
+
+        totalAmount,
+
+        invoiceNumber: null,
+
+        billSentToRetailer: false,
+
+        billSentAt: null,
+
+        advancePercentage: 0,
+
+        advanceAmount: 0,
+
+        remainingAmount: totalAmount,
+
+        advanceRequested: false,
+
+        finalPaymentRequested: false,
+
+        advancePaid: false,
+
+        fullPaymentDone: false,
+
+        paymentHistory: [],
+
+        lastPaymentTransactionId: null,
+
+        lastPaymentMethod: null,
+
+        lastPaymentType: null,
+
+        lastPaymentAmount: 0,
+
+        lastPaymentAt: null,
+
+        paymentStatus: "unpaid",
+
+        orderStatus: "pending",
+      });
+
+      await createdOrder.save({
+        session,
+      });
+
+      // =================================================
+      // 25. CREATE LEDGER ENTRIES
+      //
+      // insertMany is ideal because we actually have
+      // multiple ledger documents.
+      // =================================================
+
+      await Ledger.insertMany(
         [
-          {
-            retailerId,
-
-            wholesalerId: selectedProduct.ownerId,
-
-            productId: selectedProduct._id,
-
-            productName: selectedProduct.name,
-
-            category: selectedProduct.category,
-
-            businessType: selectedProduct.businessType,
-
-            quantity: numericQuantity,
-
-            unit: selectedUnit,
-
-            pricePerUnit: selectedPrice,
-
-            totalAmount,
-
-            advancePercentage: 0,
-
-            advanceAmount: 0,
-
-            remainingAmount: totalAmount,
-
-            advanceRequested: false,
-
-            finalPaymentRequested: false,
-
-            advancePaid: false,
-
-            fullPaymentDone: false,
-
-            paymentStatus: "unpaid",
-
-            orderStatus: "pending",
-
-            billSentToRetailer: false,
-
-            billSentAt: null,
-
-            paymentHistory: [],
-          },
-        ],
-
-        {
-          session,
-        },
-      );
-
-      const createdOrder = orderDocuments[0];
-
-      if (!createdOrder) {
-        throwHttpError(500, "Unable to create order");
-      }
-
-      // =================================================
-      // 25. CREATE BOTH LEDGER ENTRIES
-      // =================================================
-
-      await Ledger.create(
-        [
-          // =============================================
-          // RETAILER LEDGER
-          // =============================================
-
           {
             userId: retailerId,
 
@@ -833,10 +748,6 @@ export const createOrder = async (req, res) => {
 
             source: "Order",
           },
-
-          // =============================================
-          // WHOLESALER LEDGER
-          // =============================================
 
           {
             userId: selectedProduct.ownerId,
@@ -854,14 +765,14 @@ export const createOrder = async (req, res) => {
             source: "Order",
           },
         ],
-
         {
           session,
+          ordered: true,
         },
       );
 
       // =================================================
-      // 26. DETERMINE STRATEGY
+      // 26. SELECTION STRATEGY
       // =================================================
 
       const wasNewOpportunity =
@@ -873,7 +784,7 @@ export const createOrder = async (req, res) => {
         : "balanced_smart_selection";
 
       // =================================================
-      // 27. SELECT WHOLESALER USER DATA
+      // 27. WHOLESALER DETAILS
       // =================================================
 
       const selectedWholesaler = wholesalerUsers.find(
@@ -882,10 +793,7 @@ export const createOrder = async (req, res) => {
       );
 
       // =================================================
-      // 28. SAVE RESULT
-      //
-      // Do not send Express response inside transaction.
-      // Wait until transaction commits successfully.
+      // 28. STORE TRANSACTION RESULT
       // =================================================
 
       transactionResult = {
@@ -910,7 +818,7 @@ export const createOrder = async (req, res) => {
 
           maximumAllowedPrice: maxAllowedPrice,
 
-          selectedPrice: selectedPrice,
+          selectedPrice,
 
           rating: selectedCandidate.rating,
 
@@ -942,7 +850,7 @@ export const createOrder = async (req, res) => {
     });
 
     // =====================================================
-    // 29. TRANSACTION HAS COMMITTED SUCCESSFULLY
+    // 29. TRANSACTION COMMITTED
     // =====================================================
 
     if (!transactionResult || !transactionResult.createdOrder) {
@@ -953,7 +861,7 @@ export const createOrder = async (req, res) => {
     }
 
     // =====================================================
-    // 30. SEND SUCCESS ONLY AFTER COMMIT
+    // 30. SUCCESS RESPONSE
     // =====================================================
 
     const strategy = transactionResult.selection.strategy;
@@ -975,35 +883,22 @@ export const createOrder = async (req, res) => {
   } catch (error) {
     console.error("CREATE ORDER ERROR:", error);
 
-    // =====================================================
-    // withTransaction automatically ABORTS
-    // if an error is thrown before commit.
-    //
-    // So:
-    //
-    // stock rollback       ✅
-    // order rollback       ✅
-    // ledger rollback      ✅
-    //
-    // No manual rollback required.
-    // =====================================================
-
     const statusCode = Number(error?.statusCode) || 500;
-
-    // =====================================================
-    // FRIENDLIER ERROR IF TRANSACTIONS ARE NOT SUPPORTED
-    // =====================================================
 
     const errorMessage = String(error?.message || "");
 
+    // =====================================================
+    // TRANSACTION SUPPORT ERROR
+    // =====================================================
+
     if (
       errorMessage.includes("Transaction numbers are only allowed") ||
-      errorMessage.includes("replica set")
+      errorMessage.toLowerCase().includes("replica set")
     ) {
       return res.status(500).json({
         success: false,
         message:
-          "MongoDB transactions are not available. Use MongoDB Atlas or a replica-set MongoDB deployment.",
+          "MongoDB transactions are unavailable. Use MongoDB Atlas or a replica-set MongoDB deployment.",
       });
     }
 
@@ -1015,15 +910,6 @@ export const createOrder = async (req, res) => {
   } finally {
     // =====================================================
     // 31. ALWAYS END SESSION
-    //
-    // This runs:
-    //
-    // after success ✅
-    // after error   ✅
-    // after return  ✅
-    //
-    // We catch endSession errors so they do not destroy
-    // an otherwise valid API response.
     // =====================================================
 
     if (session) {

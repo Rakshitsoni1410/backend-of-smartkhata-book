@@ -4,7 +4,7 @@ import productModel from "../models/productModel.js";
 import Ledger from "../models/ledgerModel.js";
 import connection from "../config/mongodb.js";
 import { getNextInvoiceNumber } from "../utils/generateInvoiceNumber.js";
-
+import mongoose from "mongoose";
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const isUser = (value, userId) => String(value) === String(userId);
@@ -12,220 +12,1028 @@ const isUser = (value, userId) => String(value) === String(userId);
 // =====================================================
 // CREATE ORDER
 // =====================================================
+// CREATE ORDER
+// SMART + FAIR WHOLESALER SELECTION
+// TRANSACTION SAFE
+// =====================================================
 
 export const createOrder = async (req, res) => {
+  let session = null;
+
   try {
     await connection();
 
-    const { productName, quantity, unit } = req.body;
+    // =====================================================
+    // 1. AUTHORIZATION
+    // =====================================================
 
-    if (req.user.role !== "Retailer" || !productName || quantity === undefined) {
-      return res.status(400).json({
+    const role = String(req.user?.role || "")
+      .trim()
+      .toLowerCase();
+
+    if (role !== "retailer") {
+      return res.status(403).json({
         success: false,
-        message: "Retailer, product name and quantity are required",
+        message: "Only retailers can place orders",
       });
     }
 
+    const retailerId = req.userId || req.user?._id;
+
+    if (!retailerId) {
+      return res.status(401).json({
+        success: false,
+        message: "Retailer authentication required",
+      });
+    }
+
+    // =====================================================
+    // 2. REQUEST VALIDATION
+    // =====================================================
+
+    const { productName, quantity, unit } = req.body || {};
+
+    if (
+      typeof productName !== "string" ||
+      quantity === undefined ||
+      quantity === null
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Product name and quantity are required",
+      });
+    }
+
+    const cleanProductName = productName.trim();
+
     const numericQuantity = Number(quantity);
-    if (!productName.trim() || !Number.isInteger(numericQuantity) || numericQuantity <= 0) {
+
+    if (
+      !cleanProductName ||
+      !Number.isInteger(numericQuantity) ||
+      numericQuantity <= 0
+    ) {
       return res.status(400).json({
         success: false,
         message: "Product name and a positive whole quantity are required",
       });
     }
 
-    const cleanProductName = escapeRegex(productName.trim());
+    // =====================================================
+    // 3. SAFE EXACT PRODUCT MATCHING
+    // =====================================================
 
-    const wholesalerUsers = await userModel.find({
-      role: {
-        $regex: /^wholesaler$/i,
-      },
-    });
+    const escapedProductName = cleanProductName.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      "\\$&",
+    );
 
-    const wholesalerIds = wholesalerUsers.map((user) => user._id);
+    const exactProductRegex = new RegExp(`^${escapedProductName}$`, "i");
 
-    const products = await productModel.find({
-      name: {
-        $regex: new RegExp(cleanProductName, "i"),
-      },
+    // =====================================================
+    // 4. HELPER FOR HTTP ERRORS
+    // =====================================================
 
-      ownerId: {
-        $in: wholesalerIds,
-      },
+    const throwHttpError = (statusCode, message) => {
+      const error = new Error(message);
 
-      stockQty: {
-        $gte: numericQuantity,
-      },
+      error.statusCode = statusCode;
 
-      inStock: true,
-    });
+      throw error;
+    };
 
-    if (products.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No wholesaler found with enough stock",
+    // =====================================================
+    // 5. START MONGODB SESSION
+    // =====================================================
+
+    session = await mongoose.startSession();
+
+    let transactionResult = null;
+
+    // =====================================================
+    // 6. TRANSACTION
+    //
+    // IMPORTANT:
+    // Everything related to selection is done inside
+    // withTransaction.
+    //
+    // If MongoDB retries this callback because of a
+    // concurrent order, wholesaler scores are recalculated.
+    // =====================================================
+
+    await session.withTransaction(async () => {
+      // Very important if MongoDB retries callback
+      transactionResult = null;
+
+      // =================================================
+      // 7. FIND WHOLESALERS
+      // =================================================
+
+      const wholesalerUsers = await userModel
+        .find({
+          role: {
+            $regex: /^wholesaler$/i,
+          },
+        })
+        .select("_id name shopName")
+        .session(session)
+        .lean();
+
+      if (wholesalerUsers.length === 0) {
+        throwHttpError(404, "No wholesalers are currently available");
+      }
+
+      const wholesalerIds = wholesalerUsers.map((wholesaler) => wholesaler._id);
+
+      // =================================================
+      // 8. FIND ELIGIBLE PRODUCTS
+      //
+      // Must:
+      // - exactly match product
+      // - belong to wholesaler
+      // - price > 0
+      // - have enough stock
+      // - be in stock
+      // =================================================
+
+      const rawProducts = await productModel
+        .find({
+          name: {
+            $regex: exactProductRegex,
+          },
+
+          ownerId: {
+            $in: wholesalerIds,
+          },
+
+          selling: {
+            $gt: 0,
+          },
+
+          stockQty: {
+            $gte: numericQuantity,
+          },
+
+          inStock: true,
+        })
+        .session(session)
+        .lean();
+
+      if (rawProducts.length === 0) {
+        throwHttpError(
+          404,
+          "No wholesaler currently has enough stock for this product",
+        );
+      }
+
+      // =================================================
+      // 9. ONE PRODUCT LISTING PER WHOLESALER
+      //
+      // If duplicate listings exist:
+      //
+      // lower price wins.
+      //
+      // If same price:
+      //
+      // higher stock wins.
+      // =================================================
+
+      const productByWholesaler = new Map();
+
+      for (const product of rawProducts) {
+        const ownerKey = String(product.ownerId);
+
+        const price = Number(product.selling);
+
+        const stock = Number(product.stockQty);
+
+        if (
+          !Number.isFinite(price) ||
+          price <= 0 ||
+          !Number.isFinite(stock) ||
+          stock < numericQuantity
+        ) {
+          continue;
+        }
+
+        const existing = productByWholesaler.get(ownerKey);
+
+        if (!existing) {
+          productByWholesaler.set(ownerKey, product);
+
+          continue;
+        }
+
+        const existingPrice = Number(existing.selling);
+
+        const existingStock = Number(existing.stockQty || 0);
+
+        if (
+          price < existingPrice ||
+          (price === existingPrice && stock > existingStock)
+        ) {
+          productByWholesaler.set(ownerKey, product);
+        }
+      }
+
+      const products = Array.from(productByWholesaler.values());
+
+      if (products.length === 0) {
+        throwHttpError(404, "No valid wholesaler product listing found");
+      }
+
+      // =================================================
+      // 10. ORDER HISTORY
+      //
+      // lifetimeOrders:
+      // used for new-wholesaler opportunity.
+      //
+      // recentOrders:
+      // used for fairness.
+      // =================================================
+
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      const candidateOwnerIds = products.map((product) => product.ownerId);
+
+      const orderStats = await Order.aggregate([
+        {
+          $match: {
+            wholesalerId: {
+              $in: candidateOwnerIds,
+            },
+
+            orderStatus: {
+              $ne: "rejected",
+            },
+          },
+        },
+
+        {
+          $group: {
+            _id: "$wholesalerId",
+
+            lifetimeOrders: {
+              $sum: 1,
+            },
+
+            recentOrders: {
+              $sum: {
+                $cond: [
+                  {
+                    $gte: ["$createdAt", thirtyDaysAgo],
+                  },
+
+                  1,
+
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]).session(session);
+
+      const historyMap = new Map();
+
+      for (const stat of orderStats) {
+        historyMap.set(String(stat._id), {
+          lifetimeOrders: Number(stat.lifetimeOrders || 0),
+
+          recentOrders: Number(stat.recentOrders || 0),
+        });
+      }
+
+      // =================================================
+      // 11. CHEAPEST PRICE
+      // =================================================
+
+      const allPrices = products.map((product) => Number(product.selling));
+
+      const minPrice = Math.min(...allPrices);
+
+      // =================================================
+      // 12. PRICE PROTECTION
+      //
+      // Seller cannot be more than 10%
+      // above cheapest eligible seller.
+      //
+      // Example:
+      //
+      // cheapest ₹100
+      // max allowed ₹110
+      // =================================================
+
+      const maxAllowedPrice = Number((minPrice * 1.1).toFixed(2));
+
+      const candidateProducts = products.filter(
+        (product) => Number(product.selling) <= maxAllowedPrice,
+      );
+
+      if (candidateProducts.length === 0) {
+        throwHttpError(404, "No competitive wholesaler found");
+      }
+
+      // =================================================
+      // 13. IMPORTANT:
+      // PRICE SCORE ONLY USES PROTECTED SELLERS
+      //
+      // Example:
+      //
+      // 100
+      // 105
+      // 109
+      // 1000
+      //
+      // ₹1000 seller should NOT distort scoring.
+      // =================================================
+
+      const protectedPrices = candidateProducts.map((product) =>
+        Number(product.selling),
+      );
+
+      const scoringMinPrice = Math.min(...protectedPrices);
+
+      const scoringMaxPrice = Math.max(...protectedPrices);
+
+      // =================================================
+      // 14. REVIEW NORMALIZATION
+      // =================================================
+
+      const maxReviews = Math.max(
+        ...candidateProducts.map((product) =>
+          Math.max(Number(product.reviews || 0), 0),
+        ),
+
+        1,
+      );
+
+      // =================================================
+      // 15. SMART SCORING
+      //
+      // QUALITY:
+      //
+      // Price       45%
+      // Rating      30%
+      // Stock       20%
+      // Reviews      5%
+      //
+      // FINAL:
+      //
+      // Quality     75%
+      // Fairness    25%
+      // =================================================
+
+      const scoredCandidates = candidateProducts.map((product) => {
+        const price = Number(product.selling);
+
+        const stock = Number(product.stockQty || 0);
+
+        const rating = Number(product.rating || 0);
+
+        const reviews = Math.max(Number(product.reviews || 0), 0);
+
+        const ownerId = String(product.ownerId);
+
+        const history = historyMap.get(ownerId) || {
+          lifetimeOrders: 0,
+
+          recentOrders: 0,
+        };
+
+        // =============================================
+        // PRICE SCORE
+        //
+        // Cheapest = closer to 1
+        // More expensive = closer to 0
+        // =============================================
+
+        const priceScore =
+          scoringMaxPrice === scoringMinPrice
+            ? 1
+            : Math.max(
+                0,
+                Math.min(
+                  1,
+
+                  (scoringMaxPrice - price) /
+                    (scoringMaxPrice - scoringMinPrice),
+                ),
+              );
+
+        // =============================================
+        // RATING SCORE
+        //
+        // New wholesaler without rating gets 0.60
+        // instead of unfairly receiving 0.
+        // =============================================
+
+        let ratingScore = 0.6;
+
+        if (Number.isFinite(rating) && rating > 0) {
+          ratingScore = Math.max(0, Math.min(1, rating / 5));
+        }
+
+        // =============================================
+        // STOCK SCORE
+        //
+        // 3x requested quantity = full stock score.
+        //
+        // Huge stock does not infinitely increase score.
+        // =============================================
+
+        const idealStock = Math.max(numericQuantity * 3, 1);
+
+        const stockScore = Math.max(0, Math.min(1, stock / idealStock));
+
+        // =============================================
+        // REVIEW SCORE
+        //
+        // New/no reviews = neutral score.
+        // =============================================
+
+        let reviewScore = 0.35;
+
+        if (reviews > 0) {
+          reviewScore = Math.max(
+            0,
+            Math.min(
+              1,
+
+              Math.log1p(reviews) / Math.log1p(maxReviews),
+            ),
+          );
+        }
+
+        // =============================================
+        // QUALITY SCORE
+        // =============================================
+
+        const qualityScore =
+          priceScore * 0.45 +
+          ratingScore * 0.3 +
+          stockScore * 0.2 +
+          reviewScore * 0.05;
+
+        // =============================================
+        // FAIRNESS SCORE
+        //
+        // Recent orders:
+        //
+        // 0 → 1.00
+        // 1 → 0.50
+        // 2 → 0.33
+        // 3 → 0.25
+        // 5 → 0.16
+        // =============================================
+
+        const fairnessScore = 1 / (1 + history.recentOrders);
+
+        // =============================================
+        // FINAL SCORE
+        // =============================================
+
+        const finalScore = qualityScore * 0.75 + fairnessScore * 0.25;
+
+        return {
+          product,
+
+          price,
+
+          stock,
+
+          rating,
+
+          reviews,
+
+          lifetimeOrders: history.lifetimeOrders,
+
+          recentOrders: history.recentOrders,
+
+          priceScore,
+
+          ratingScore,
+
+          stockScore,
+
+          reviewScore,
+
+          qualityScore,
+
+          fairnessScore,
+
+          finalScore,
+        };
       });
-    }
 
-    // ==========================================
-    // AI PRODUCT SELECTION
-    // ==========================================
+      // =================================================
+      // 16. BEST QUALITY SCORE
+      // =================================================
 
-    const scoredProducts = products.map((product) => {
-      const rating = Number(product.rating || 0);
+      const bestQuality = Math.max(
+        ...scoredCandidates.map((candidate) => candidate.qualityScore),
+      );
 
-      const reviews = Number(product.reviews || 0);
+      // =================================================
+      // 17. NEW WHOLESALER PROTECTION
+      //
+      // New seller gets priority only if:
+      //
+      // lifetime orders = 0
+      //
+      // AND
+      //
+      // already inside 10% price limit
+      //
+      // AND
+      //
+      // quality >= 70% of best seller.
+      // =================================================
 
-      const selling = Number(product.selling || 0);
+      const newWholesalerCandidates = scoredCandidates
+        .filter(
+          (candidate) =>
+            candidate.lifetimeOrders === 0 &&
+            candidate.qualityScore >= bestQuality * 0.7,
+        )
+        .sort((a, b) => {
+          if (b.qualityScore !== a.qualityScore) {
+            return b.qualityScore - a.qualityScore;
+          }
 
-      const stockQty = Number(product.stockQty || 0);
+          // Same quality:
+          // cheaper new seller first
 
-      let aiScore = 1000 - selling;
+          if (a.price !== b.price) {
+            return a.price - b.price;
+          }
 
-      aiScore += stockQty * 0.2;
+          // Same again:
+          // more stock first
 
-      if (rating > 0) {
-        aiScore += rating * 50;
+          return b.stock - a.stock;
+        });
+
+      // =================================================
+      // 18. NORMAL BALANCED RANKING
+      // =================================================
+
+      const normalCandidates = [...scoredCandidates].sort((a, b) => {
+        if (b.finalScore !== a.finalScore) {
+          return b.finalScore - a.finalScore;
+        }
+
+        // Fewer recent orders wins tie
+
+        if (a.recentOrders !== b.recentOrders) {
+          return a.recentOrders - b.recentOrders;
+        }
+
+        // Cheaper wins next tie
+
+        if (a.price !== b.price) {
+          return a.price - b.price;
+        }
+
+        // More stock wins final tie
+
+        return b.stock - a.stock;
+      });
+
+      // =================================================
+      // 19. BUILD FINAL CANDIDATE QUEUE
+      //
+      // Competitive new sellers first.
+      //
+      // Then normal rankings.
+      //
+      // No duplicate products.
+      // =================================================
+
+      const candidateQueue = [];
+
+      const addedProductIds = new Set();
+
+      const addCandidate = (candidate) => {
+        const productId = String(candidate.product._id);
+
+        if (addedProductIds.has(productId)) {
+          return;
+        }
+
+        addedProductIds.add(productId);
+
+        candidateQueue.push(candidate);
+      };
+
+      for (const candidate of newWholesalerCandidates) {
+        addCandidate(candidate);
       }
 
-      if (reviews > 0) {
-        aiScore += reviews * 0.5;
+      for (const candidate of normalCandidates) {
+        addCandidate(candidate);
       }
 
-      return {
-        product,
-        aiScore,
+      if (candidateQueue.length === 0) {
+        throwHttpError(404, "No suitable wholesaler found");
+      }
+
+      // =================================================
+      // 20. ATOMIC STOCK RESERVATION
+      //
+      // IMPORTANT PRICE PROTECTION:
+      //
+      // selling must STILL equal the price that was scored.
+      //
+      // If seller changes price during checkout,
+      // this candidate fails and next seller is tried.
+      // =================================================
+
+      let selectedCandidate = null;
+
+      let updatedProduct = null;
+
+      for (const candidate of candidateQueue) {
+        const reserved = await productModel.findOneAndUpdate(
+          {
+            _id: candidate.product._id,
+
+            ownerId: candidate.product.ownerId,
+
+            inStock: true,
+
+            stockQty: {
+              $gte: numericQuantity,
+            },
+
+            // Price cannot silently change
+            selling: Number(candidate.price),
+          },
+
+          {
+            $inc: {
+              stockQty: -numericQuantity,
+            },
+          },
+
+          {
+            new: true,
+            session,
+          },
+        );
+
+        if (reserved) {
+          selectedCandidate = candidate;
+
+          updatedProduct = reserved;
+
+          break;
+        }
+      }
+
+      if (!selectedCandidate || !updatedProduct) {
+        throwHttpError(
+          409,
+          "Stock or price changed while placing the order. Please try again.",
+        );
+      }
+
+      // =================================================
+      // 21. SET inStock FALSE IF STOCK IS ZERO
+      // =================================================
+
+      if (Number(updatedProduct.stockQty) <= 0) {
+        await productModel.updateOne(
+          {
+            _id: updatedProduct._id,
+          },
+
+          {
+            $set: {
+              inStock: false,
+            },
+          },
+
+          {
+            session,
+          },
+        );
+      }
+
+      // =================================================
+      // 22. FINAL SELECTED PRODUCT DETAILS
+      // =================================================
+
+      const selectedProduct = selectedCandidate.product;
+
+      const selectedPrice = Number(selectedCandidate.price);
+
+      const totalAmount = Number((selectedPrice * numericQuantity).toFixed(2));
+
+      // =================================================
+      // 23. SAFE UNIT
+      // =================================================
+
+      const requestedUnit = typeof unit === "string" ? unit.trim() : "";
+
+      const selectedUnit =
+        requestedUnit || String(selectedProduct.weightUnit || "pcs").trim();
+
+      // =================================================
+      // 24. CREATE ORDER
+      //
+      // Array form is intentional because Mongoose
+      // transactions support create([...], { session }).
+      // =================================================
+
+      const orderDocuments = await Order.create(
+        [
+          {
+            retailerId,
+
+            wholesalerId: selectedProduct.ownerId,
+
+            productId: selectedProduct._id,
+
+            productName: selectedProduct.name,
+
+            category: selectedProduct.category,
+
+            businessType: selectedProduct.businessType,
+
+            quantity: numericQuantity,
+
+            unit: selectedUnit,
+
+            pricePerUnit: selectedPrice,
+
+            totalAmount,
+
+            advancePercentage: 0,
+
+            advanceAmount: 0,
+
+            remainingAmount: totalAmount,
+
+            advanceRequested: false,
+
+            finalPaymentRequested: false,
+
+            advancePaid: false,
+
+            fullPaymentDone: false,
+
+            paymentStatus: "unpaid",
+
+            orderStatus: "pending",
+
+            billSentToRetailer: false,
+
+            billSentAt: null,
+
+            paymentHistory: [],
+          },
+        ],
+
+        {
+          session,
+        },
+      );
+
+      const createdOrder = orderDocuments[0];
+
+      if (!createdOrder) {
+        throwHttpError(500, "Unable to create order");
+      }
+
+      // =================================================
+      // 25. CREATE BOTH LEDGER ENTRIES
+      // =================================================
+
+      await Ledger.create(
+        [
+          // =============================================
+          // RETAILER LEDGER
+          // =============================================
+
+          {
+            userId: retailerId,
+
+            partyId: selectedProduct.ownerId,
+
+            orderId: createdOrder._id,
+
+            type: "debit",
+
+            amount: totalAmount,
+
+            note: `Order placed for ${selectedProduct.name}`,
+
+            source: "Order",
+          },
+
+          // =============================================
+          // WHOLESALER LEDGER
+          // =============================================
+
+          {
+            userId: selectedProduct.ownerId,
+
+            partyId: retailerId,
+
+            orderId: createdOrder._id,
+
+            type: "credit",
+
+            amount: totalAmount,
+
+            note: `New order received for ${selectedProduct.name}`,
+
+            source: "Order",
+          },
+        ],
+
+        {
+          session,
+        },
+      );
+
+      // =================================================
+      // 26. DETERMINE STRATEGY
+      // =================================================
+
+      const wasNewOpportunity =
+        selectedCandidate.lifetimeOrders === 0 &&
+        selectedCandidate.qualityScore >= bestQuality * 0.7;
+
+      const selectionStrategy = wasNewOpportunity
+        ? "new_wholesaler_opportunity"
+        : "balanced_smart_selection";
+
+      // =================================================
+      // 27. SELECT WHOLESALER USER DATA
+      // =================================================
+
+      const selectedWholesaler = wholesalerUsers.find(
+        (wholesaler) =>
+          String(wholesaler._id) === String(selectedProduct.ownerId),
+      );
+
+      // =================================================
+      // 28. SAVE RESULT
+      //
+      // Do not send Express response inside transaction.
+      // Wait until transaction commits successfully.
+      // =================================================
+
+      transactionResult = {
+        createdOrder,
+
+        selectedWholesaler: {
+          _id: selectedProduct.ownerId,
+
+          name: selectedWholesaler?.name || "",
+
+          shopName: selectedWholesaler?.shopName || "",
+        },
+
+        selection: {
+          strategy: selectionStrategy,
+
+          eligibleWholesalers: products.length,
+
+          priceProtectedWholesalers: scoredCandidates.length,
+
+          cheapestPrice: Number(minPrice.toFixed(2)),
+
+          maximumAllowedPrice: maxAllowedPrice,
+
+          selectedPrice: selectedPrice,
+
+          rating: selectedCandidate.rating,
+
+          reviews: selectedCandidate.reviews,
+
+          stockBeforeOrder: selectedCandidate.stock,
+
+          stockAfterOrder: Number(updatedProduct.stockQty),
+
+          lifetimeOrdersBeforeSelection: selectedCandidate.lifetimeOrders,
+
+          recentOrdersBeforeSelection: selectedCandidate.recentOrders,
+
+          priceScore: Number(selectedCandidate.priceScore.toFixed(4)),
+
+          ratingScore: Number(selectedCandidate.ratingScore.toFixed(4)),
+
+          stockScore: Number(selectedCandidate.stockScore.toFixed(4)),
+
+          reviewScore: Number(selectedCandidate.reviewScore.toFixed(4)),
+
+          qualityScore: Number(selectedCandidate.qualityScore.toFixed(4)),
+
+          fairnessScore: Number(selectedCandidate.fairnessScore.toFixed(4)),
+
+          finalScore: Number(selectedCandidate.finalScore.toFixed(4)),
+        },
       };
     });
 
-    scoredProducts.sort((a, b) => b.aiScore - a.aiScore);
+    // =====================================================
+    // 29. TRANSACTION HAS COMMITTED SUCCESSFULLY
+    // =====================================================
 
-    const bestProduct = scoredProducts[0].product;
-
-    const totalAmount = Number(bestProduct.selling) * numericQuantity;
-
-    // ==========================================
-    // CREATE ORDER
-    // ==========================================
-
-    const order = new Order({
-      retailerId: req.userId,
-
-      wholesalerId: bestProduct.ownerId,
-
-      productId: bestProduct._id,
-
-      productName: bestProduct.name,
-
-      category: bestProduct.category,
-
-      businessType: bestProduct.businessType,
-
-      quantity: numericQuantity,
-
-      unit: unit || "pcs",
-
-      pricePerUnit: Number(bestProduct.selling),
-
-      totalAmount,
-
-      advancePercentage: 0,
-
-      advanceAmount: 0,
-
-      remainingAmount: totalAmount,
-
-      advanceRequested: false,
-
-      finalPaymentRequested: false,
-
-      advancePaid: false,
-
-      fullPaymentDone: false,
-
-      paymentStatus: "unpaid",
-
-      orderStatus: "pending",
-
-      billSentToRetailer: false,
-
-      billSentAt: null,
-
-      paymentHistory: [],
-    });
-
-    // ==========================================
-    // REDUCE STOCK
-    // ==========================================
-
-    bestProduct.stockQty = bestProduct.stockQty - numericQuantity;
-
-    if (bestProduct.stockQty <= 0) {
-      bestProduct.inStock = false;
+    if (!transactionResult || !transactionResult.createdOrder) {
+      return res.status(500).json({
+        success: false,
+        message: "Order transaction completed without a valid result",
+      });
     }
 
-    await bestProduct.save();
+    // =====================================================
+    // 30. SEND SUCCESS ONLY AFTER COMMIT
+    // =====================================================
 
-    await order.save();
-
-    // ==========================================
-    // RETAILER LEDGER
-    // ==========================================
-
-    await Ledger.create({
-      userId: retailerId,
-
-      partyId: bestProduct.ownerId,
-
-      orderId: order._id,
-
-      type: "debit",
-
-      amount: totalAmount,
-
-      note: `Order placed for ${bestProduct.name}`,
-    });
-
-    // ==========================================
-    // WHOLESALER LEDGER
-    // ==========================================
-
-    await Ledger.create({
-      userId: bestProduct.ownerId,
-
-      partyId: retailerId,
-
-      orderId: order._id,
-
-      type: "credit",
-
-      amount: totalAmount,
-
-      note: `New order received for ${bestProduct.name}`,
-    });
+    const strategy = transactionResult.selection.strategy;
 
     return res.status(201).json({
       success: true,
 
-      message: "AI selected wholesaler successfully",
+      message:
+        strategy === "new_wholesaler_opportunity"
+          ? "A competitive new wholesaler was selected fairly"
+          : "Best balanced wholesaler selected successfully",
 
-      selectedWholesaler: bestProduct.ownerId,
+      selectedWholesaler: transactionResult.selectedWholesaler,
 
-      order,
+      selection: transactionResult.selection,
+
+      order: transactionResult.createdOrder,
     });
   } catch (error) {
-    console.log("CREATE ORDER ERROR:", error);
+    console.error("CREATE ORDER ERROR:", error);
 
-    return res.status(500).json({
+    // =====================================================
+    // withTransaction automatically ABORTS
+    // if an error is thrown before commit.
+    //
+    // So:
+    //
+    // stock rollback       ✅
+    // order rollback       ✅
+    // ledger rollback      ✅
+    //
+    // No manual rollback required.
+    // =====================================================
+
+    const statusCode = Number(error?.statusCode) || 500;
+
+    // =====================================================
+    // FRIENDLIER ERROR IF TRANSACTIONS ARE NOT SUPPORTED
+    // =====================================================
+
+    const errorMessage = String(error?.message || "");
+
+    if (
+      errorMessage.includes("Transaction numbers are only allowed") ||
+      errorMessage.includes("replica set")
+    ) {
+      return res.status(500).json({
+        success: false,
+        message:
+          "MongoDB transactions are not available. Use MongoDB Atlas or a replica-set MongoDB deployment.",
+      });
+    }
+
+    return res.status(statusCode).json({
       success: false,
-      message: error.message,
+
+      message: error?.message || "Failed to create order",
     });
+  } finally {
+    // =====================================================
+    // 31. ALWAYS END SESSION
+    //
+    // This runs:
+    //
+    // after success ✅
+    // after error   ✅
+    // after return  ✅
+    //
+    // We catch endSession errors so they do not destroy
+    // an otherwise valid API response.
+    // =====================================================
+
+    if (session) {
+      try {
+        await session.endSession();
+      } catch (sessionError) {
+        console.error("SESSION END ERROR:", sessionError);
+      }
+    }
   }
 };
-
-// =====================================================
 // GET WHOLESALERS
-// =====================================================
 
 export const getWholesalers = async (req, res) => {
   try {
@@ -314,11 +1122,16 @@ export const updateOrderStatus = async (req, res) => {
     const { status } = req.body;
 
     if (req.user.role !== "Wholesaler") {
-      return res.status(403).json({ success: false, message: "Only wholesalers can update order status" });
+      return res.status(403).json({
+        success: false,
+        message: "Only wholesalers can update order status",
+      });
     }
     const allowedStatuses = ["approved", "onTheWay", "delivered", "rejected"];
     if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({ success: false, message: "Invalid order status" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid order status" });
     }
 
     const existingOrder = await Order.findById(req.params.id);
@@ -489,7 +1302,9 @@ export const payAdvance = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Retailer") {
-      return res.status(403).json({ success: false, message: "Only retailers can pay for orders" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Only retailers can pay for orders" });
     }
 
     const order = await Order.findById(req.params.id);
@@ -694,7 +1509,9 @@ export const completePayment = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Retailer") {
-      return res.status(403).json({ success: false, message: "Only retailers can pay for orders" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Only retailers can pay for orders" });
     }
 
     const order = await Order.findById(req.params.id);
@@ -907,7 +1724,10 @@ export const requestAdvancePayment = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Wholesaler") {
-      return res.status(403).json({ success: false, message: "Only wholesalers can request advance payment" });
+      return res.status(403).json({
+        success: false,
+        message: "Only wholesalers can request advance payment",
+      });
     }
 
     const { advancePercentage } = req.body;
@@ -974,7 +1794,10 @@ export const requestFinalPayment = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Wholesaler") {
-      return res.status(403).json({ success: false, message: "Only wholesalers can request final payment" });
+      return res.status(403).json({
+        success: false,
+        message: "Only wholesalers can request final payment",
+      });
     }
 
     const order = await Order.findById(req.params.id);
@@ -1155,7 +1978,9 @@ export const sendBillToRetailer = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Wholesaler") {
-      return res.status(403).json({ success: false, message: "Only wholesalers can send bills" });
+      return res
+        .status(403)
+        .json({ success: false, message: "Only wholesalers can send bills" });
     }
 
     const { id } = req.params;

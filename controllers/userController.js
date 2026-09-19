@@ -435,14 +435,15 @@ export const loginUser = async (req, res) => {
   }
 };
 
-// ==========================================
 // FORGOT PASSWORD
+
 export const forgotPassword = async (req, res) => {
   try {
     await connection();
 
     const { email } = req.body;
 
+    // VALIDATE EMAIL
     if (!email) {
       return res.status(400).json({
         success: false,
@@ -454,11 +455,29 @@ export const forgotPassword = async (req, res) => {
       .trim()
       .toLowerCase();
 
+    // Basic format check
+    if (
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+        normalizedEmail
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Enter a valid email address",
+      });
+    }
+
+    // FIND USER
     const user = await userModel.findOne({
       email: normalizedEmail,
     });
 
-    // Do not reveal whether account exists
+    /*
+      Do not reveal whether the email exists.
+
+      Always return the same type of successful response
+      when the account does not exist.
+    */
     if (!user) {
       return res.status(200).json({
         success: true,
@@ -467,49 +486,55 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    // ==========================================
     // RESEND COOLDOWN - 60 SECONDS
-    // ==========================================
-
     if (user.resetPasswordOtpLastSentAt) {
-      const elapsed =
-        Date.now() -
-        new Date(
-          user.resetPasswordOtpLastSentAt
-        ).getTime();
+      const lastSentAt = new Date(
+        user.resetPasswordOtpLastSentAt
+      ).getTime();
 
-      if (elapsed < 60 * 1000) {
-        const remainingSeconds =
-          Math.ceil(
-            (60 * 1000 - elapsed) /
-              1000
-          );
+      if (Number.isFinite(lastSentAt)) {
+        const elapsed =
+          Date.now() - lastSentAt;
 
-        return res.status(429).json({
-          success: false,
-          message: `Please wait ${remainingSeconds} seconds before requesting another OTP.`,
-        });
+        const cooldown =
+          60 * 1000;
+
+        if (elapsed < cooldown) {
+          const remainingSeconds =
+            Math.ceil(
+              (cooldown - elapsed) /
+                1000
+            );
+
+          return res.status(429).json({
+            success: false,
+            message: `Please wait ${remainingSeconds} seconds before requesting another OTP.`,
+          });
+        }
       }
     }
 
-    // ==========================================
-    // GENERATE SECURE 6 DIGIT OTP
-    // ==========================================
+    // GENERATE SECURE 6-DIGIT OTP
 
     const otp = crypto
-      .randomInt(100000, 1000000)
+      .randomInt(
+        100000,
+        1000000
+      )
       .toString();
 
-    // Never save plain OTP in MongoDB
+    // HASH OTP
+
     const otpHash = crypto
       .createHash("sha256")
       .update(otp)
       .digest("hex");
 
+    // STORE OTP DATA
+
     user.resetPasswordOtpHash =
       otpHash;
 
-    // OTP valid for 10 minutes
     user.resetPasswordOtpExpires =
       new Date(
         Date.now() +
@@ -524,89 +549,178 @@ export const forgotPassword = async (req, res) => {
 
     await user.save();
 
-    // ==========================================
-    // SEND OTP EMAIL
-    // ==========================================
+    // SEND EMAIL
 
     try {
       await sendEmail({
         to: normalizedEmail,
 
         subject:
-          "Smart Khata Password Reset OTP",
+          "SmartKhataBook Password Reset OTP",
 
         html: `
           <div
             style="
               font-family: Arial, sans-serif;
-              max-width: 500px;
-              margin: auto;
-              padding: 30px;
+              max-width: 520px;
+              margin: 0 auto;
               background: #ffffff;
-              border-radius: 12px;
               border: 1px solid #e5e7eb;
+              border-radius: 16px;
+              overflow: hidden;
             "
           >
-            <h2
-              style="
-                color: #111827;
-                margin-bottom: 10px;
-              "
-            >
-              Password Reset
-            </h2>
-
-            <p style="color:#6b7280;">
-              Hello ${user.name || "User"},
-            </p>
-
-            <p style="color:#6b7280;">
-              Use the OTP below to reset your
-              Smart Khata password.
-            </p>
 
             <div
               style="
-                font-size: 34px;
-                font-weight: bold;
-                letter-spacing: 8px;
+                background: #4f46e5;
+                padding: 30px;
                 text-align: center;
-                margin: 30px 0;
-                color: #4f46e5;
               "
             >
-              ${otp}
+              <h1
+                style="
+                  color: #ffffff;
+                  margin: 0;
+                  font-size: 24px;
+                "
+              >
+                SmartKhataBook
+              </h1>
+
+              <p
+                style="
+                  color: rgba(255,255,255,0.8);
+                  margin: 7px 0 0;
+                  font-size: 13px;
+                "
+              >
+                Password Reset Verification
+              </p>
             </div>
 
-            <p style="color:#6b7280;">
-              This OTP is valid for
-              <strong>10 minutes</strong>.
-            </p>
-
-            <p style="color:#ef4444;">
-              Do not share this OTP with anyone.
-            </p>
-
-            <p
+            <div
               style="
-                margin-top: 30px;
-                font-size: 12px;
-                color: #9ca3af;
+                padding: 32px;
               "
             >
-              If you did not request a password
-              reset, you can ignore this email.
-            </p>
+              <h2
+                style="
+                  color: #111827;
+                  margin: 0 0 10px;
+                  font-size: 20px;
+                "
+              >
+                Hi ${user.name || "there"},
+              </h2>
+
+              <p
+                style="
+                  color: #6b7280;
+                  font-size: 14px;
+                  line-height: 1.7;
+                "
+              >
+                We received a request to reset your
+                SmartKhataBook password.
+                Use the OTP below to continue.
+              </p>
+
+              <div
+                style="
+                  margin: 28px 0;
+                  padding: 22px;
+                  background: #eef2ff;
+                  border: 1px solid #c7d2fe;
+                  border-radius: 14px;
+                  text-align: center;
+                "
+              >
+                <div
+                  style="
+                    color: #4f46e5;
+                    font-size: 34px;
+                    font-weight: 800;
+                    letter-spacing: 8px;
+                  "
+                >
+                  ${otp}
+                </div>
+              </div>
+
+              <p
+                style="
+                  color: #6b7280;
+                  font-size: 13px;
+                  line-height: 1.6;
+                "
+              >
+                This OTP is valid for
+                <strong>10 minutes</strong>.
+              </p>
+
+              <p
+                style="
+                  color: #dc2626;
+                  font-size: 13px;
+                  line-height: 1.6;
+                "
+              >
+                Never share this OTP with anyone.
+              </p>
+
+              <p
+                style="
+                  margin-top: 28px;
+                  color: #9ca3af;
+                  font-size: 12px;
+                  line-height: 1.6;
+                "
+              >
+                If you did not request a password
+                reset, you can safely ignore this email.
+              </p>
+            </div>
+
           </div>
         `,
       });
     } catch (emailError) {
+      // IMPORTANT SERVER LOGS
       console.error(
-        "RESET OTP EMAIL ERROR:",
-        emailError.message
+        "========== RESET OTP EMAIL ERROR =========="
       );
 
-      // Clear unusable OTP
+      console.error(
+        "MESSAGE:",
+        emailError?.message
+      );
+
+      console.error(
+        "CODE:",
+        emailError?.code
+      );
+
+      console.error(
+        "COMMAND:",
+        emailError?.command
+      );
+
+      console.error(
+        "RESPONSE:",
+        emailError?.response
+      );
+
+      console.error(
+        "RESPONSE CODE:",
+        emailError?.responseCode
+      );
+
+      console.error(
+        "==========================================="
+      );
+
+      // REMOVE FAILED OTP
       user.resetPasswordOtpHash =
         null;
 
@@ -616,7 +730,21 @@ export const forgotPassword = async (req, res) => {
       user.resetPasswordOtpAttempts =
         0;
 
-      await user.save();
+      // IMPORTANT FIX:
+      // email was not sent, so do not keep cooldown.
+      user.resetPasswordOtpLastSentAt =
+        null;
+
+      try {
+        await user.save();
+      } catch (
+        cleanupError
+      ) {
+        console.error(
+          "OTP CLEANUP ERROR:",
+          cleanupError
+        );
+      }
 
       return res.status(500).json({
         success: false,
@@ -625,15 +753,40 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
+    // SUCCESS
+
     return res.status(200).json({
       success: true,
+
+      /*
+        Keep this generic so account existence
+        isn't unnecessarily exposed.
+      */
       message:
-        "OTP sent to your registered email.",
+        "If this email is registered, an OTP has been sent.",
     });
   } catch (error) {
     console.error(
-      "FORGOT PASSWORD ERROR:",
-      error
+      "========== FORGOT PASSWORD ERROR =========="
+    );
+
+    console.error(
+      "MESSAGE:",
+      error?.message
+    );
+
+    console.error(
+      "CODE:",
+      error?.code
+    );
+
+    console.error(
+      "STACK:",
+      error?.stack
+    );
+
+    console.error(
+      "==========================================="
     );
 
     return res.status(500).json({
@@ -643,9 +796,7 @@ export const forgotPassword = async (req, res) => {
     });
   }
 };
-// ==========================================
 // RESET PASSWORD
-// ==========================================
 
 export const resetPasswordWithOtp = async (
   req,

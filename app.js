@@ -2,7 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import connection from "./config/mongodb.js";
 import connectCloudinary from "./config/cloudinary.js";
-
+import notificationRoutes from "./routes/notificationRoutes.js";
 import userRouter from "./routes/userRoute.js";
 import productRouter from "./routes/productRoute.js";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -112,7 +112,7 @@ app.use("/api/ledger", ledgerRoutes);
 app.use("/api/customer-portal", customerPortalRoutes);
 
 app.use("/api/reports", reportRoutes);
-
+app.use("/api/notifications", notificationRoutes);
 /* =========================================
    API TEST ROUTE
 ========================================= */

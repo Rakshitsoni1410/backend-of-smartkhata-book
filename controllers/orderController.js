@@ -1,25 +1,38 @@
 import mongoose from "mongoose";
-import Order from "../models/orderModel.js";
 
+import Order from "../models/orderModel.js";
 import userModel from "../models/userModel.js";
 import productModel from "../models/productModel.js";
 import Ledger from "../models/ledgerModel.js";
+
 import connection from "../config/mongodb.js";
+
 import { getNextInvoiceNumber } from "../utils/generateInvoiceNumber.js";
+
+import { safeNotify } from "../utils/createNotification.js";
+
+// =====================================================
+// HELPERS
+// =====================================================
+
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const isUser = (value, userId) => String(value) === String(userId);
 
+const formatNotificationMoney = (value) => {
+  const amount = Number(value || 0);
+
+  if (!Number.isFinite(amount)) {
+    return "₹0";
+  }
+
+  return `₹${amount.toLocaleString("en-IN", {
+    maximumFractionDigits: 2,
+  })}`;
+};
+
 // =====================================================
 // CREATE ORDER
-// =====================================================
-// CREATE ORDER
-// SMART + FAIR WHOLESALER SELECTION
-// TRANSACTION SAFE
-// =====================================================
-// CREATE ORDER
-// SMART + FAIR WHOLESALER SELECTION
-// TRANSACTION SAFE
 // =====================================================
 
 export const createOrder = async (req, res) => {
@@ -27,10 +40,6 @@ export const createOrder = async (req, res) => {
 
   try {
     await connection();
-
-    // =====================================================
-    // 1. AUTHORIZATION
-    // =====================================================
 
     const role = String(req.user?.role || "")
       .trim()
@@ -51,10 +60,6 @@ export const createOrder = async (req, res) => {
         message: "Retailer authentication required",
       });
     }
-
-    // =====================================================
-    // 2. REQUEST
-    // =====================================================
 
     const { productName, quantity, unit } = req.body || {};
 
@@ -84,20 +89,9 @@ export const createOrder = async (req, res) => {
       });
     }
 
-    // =====================================================
-    // 3. SAFE EXACT PRODUCT MATCH
-    // =====================================================
-
-    const escapedProductName = cleanProductName.replace(
-      /[.*+?^${}()|[\]\\]/g,
-      "\\$&",
-    );
+    const escapedProductName = escapeRegex(cleanProductName);
 
     const exactProductRegex = new RegExp(`^${escapedProductName}$`, "i");
-
-    // =====================================================
-    // 4. ERROR HELPER
-    // =====================================================
 
     const throwHttpError = (statusCode, message) => {
       const error = new Error(message);
@@ -107,25 +101,15 @@ export const createOrder = async (req, res) => {
       throw error;
     };
 
-    // =====================================================
-    // 5. START SESSION
-    // =====================================================
-
     session = await mongoose.startSession();
 
     let transactionResult = null;
 
-    // =====================================================
-    // 6. TRANSACTION
-    // =====================================================
-
     await session.withTransaction(async () => {
-      // Important because MongoDB may retry
-      // this callback after a write conflict.
       transactionResult = null;
 
       // =================================================
-      // 7. FIND WHOLESALERS
+      // WHOLESALERS
       // =================================================
 
       const wholesalerUsers = await userModel
@@ -145,7 +129,7 @@ export const createOrder = async (req, res) => {
       const wholesalerIds = wholesalerUsers.map((wholesaler) => wholesaler._id);
 
       // =================================================
-      // 8. FIND ELIGIBLE PRODUCTS
+      // PRODUCTS
       // =================================================
 
       const rawProducts = await productModel
@@ -179,7 +163,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 9. ONLY ONE LISTING PER WHOLESALER
+      // ONE LISTING PER WHOLESALER
       // =================================================
 
       const productByWholesaler = new Map();
@@ -212,9 +196,6 @@ export const createOrder = async (req, res) => {
 
         const existingStock = Number(existing.stockQty || 0);
 
-        // Prefer lower price.
-        // If same price, prefer higher stock.
-
         if (
           price < existingPrice ||
           (price === existingPrice && stock > existingStock)
@@ -230,7 +211,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 10. ORDER HISTORY
+      // ORDER HISTORY
       // =================================================
 
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -244,8 +225,6 @@ export const createOrder = async (req, res) => {
               $in: candidateOwnerIds,
             },
 
-            // Rejected orders do not
-            // count for fairness/history.
             orderStatus: {
               $ne: "rejected",
             },
@@ -288,16 +267,12 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 11. CHEAPEST PRICE
+      // PRICE PROTECTION
       // =================================================
 
       const allPrices = products.map((product) => Number(product.selling));
 
       const minPrice = Math.min(...allPrices);
-
-      // =================================================
-      // 12. 10% PRICE PROTECTION
-      // =================================================
 
       const maxAllowedPrice = Number((minPrice * 1.1).toFixed(2));
 
@@ -309,10 +284,6 @@ export const createOrder = async (req, res) => {
         throwHttpError(404, "No competitive wholesaler found");
       }
 
-      // =================================================
-      // 13. PRICE NORMALIZATION
-      // =================================================
-
       const protectedPrices = candidateProducts.map((product) =>
         Number(product.selling),
       );
@@ -321,30 +292,15 @@ export const createOrder = async (req, res) => {
 
       const scoringMaxPrice = Math.max(...protectedPrices);
 
-      // =================================================
-      // 14. REVIEWS
-      // =================================================
-
       const maxReviews = Math.max(
         ...candidateProducts.map((product) =>
           Math.max(Number(product.reviews || 0), 0),
         ),
-
         1,
       );
 
       // =================================================
-      // 15. SMART SCORE
-      //
-      // Price    45%
-      // Rating   30%
-      // Stock    20%
-      // Reviews   5%
-      //
-      // Final:
-      //
-      // Quality  75%
-      // Fairness 25%
+      // SCORE CANDIDATES
       // =================================================
 
       const scoredCandidates = candidateProducts.map((product) => {
@@ -364,10 +320,6 @@ export const createOrder = async (req, res) => {
           recentOrders: 0,
         };
 
-        // ============================================
-        // PRICE SCORE
-        // ============================================
-
         const priceScore =
           scoringMaxPrice === scoringMinPrice
             ? 1
@@ -381,29 +333,15 @@ export const createOrder = async (req, res) => {
                 ),
               );
 
-        // ============================================
-        // RATING SCORE
-        //
-        // New sellers get neutral 0.60.
-        // ============================================
-
         let ratingScore = 0.6;
 
         if (Number.isFinite(rawRating) && rawRating > 0) {
           ratingScore = Math.max(0, Math.min(1, rawRating / 5));
         }
 
-        // ============================================
-        // STOCK SCORE
-        // ============================================
-
         const idealStock = Math.max(numericQuantity * 3, 1);
 
         const stockScore = Math.max(0, Math.min(1, stock / idealStock));
-
-        // ============================================
-        // REVIEW SCORE
-        // ============================================
 
         let reviewScore = 0.35;
 
@@ -418,25 +356,13 @@ export const createOrder = async (req, res) => {
           );
         }
 
-        // ============================================
-        // QUALITY
-        // ============================================
-
         const qualityScore =
           priceScore * 0.45 +
           ratingScore * 0.3 +
           stockScore * 0.2 +
           reviewScore * 0.05;
 
-        // ============================================
-        // FAIRNESS
-        // ============================================
-
         const fairnessScore = 1 / (1 + history.recentOrders);
-
-        // ============================================
-        // FINAL
-        // ============================================
 
         const finalScore = qualityScore * 0.75 + fairnessScore * 0.25;
 
@@ -471,16 +397,12 @@ export const createOrder = async (req, res) => {
         };
       });
 
-      // =================================================
-      // 16. BEST QUALITY
-      // =================================================
-
       const bestQuality = Math.max(
         ...scoredCandidates.map((candidate) => candidate.qualityScore),
       );
 
       // =================================================
-      // 17. NEW WHOLESALER OPPORTUNITY
+      // NEW WHOLESALER OPPORTUNITY
       // =================================================
 
       const newWholesalerCandidates = scoredCandidates
@@ -502,7 +424,7 @@ export const createOrder = async (req, res) => {
         });
 
       // =================================================
-      // 18. NORMAL FAIR SELECTION
+      // NORMAL SELECTION
       // =================================================
 
       const normalCandidates = [...scoredCandidates].sort((a, b) => {
@@ -522,7 +444,7 @@ export const createOrder = async (req, res) => {
       });
 
       // =================================================
-      // 19. CANDIDATE QUEUE
+      // QUEUE
       // =================================================
 
       const candidateQueue = [];
@@ -554,7 +476,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 20. ATOMIC STOCK RESERVATION
+      // RESERVE STOCK
       // =================================================
 
       let selectedCandidate = null;
@@ -574,8 +496,6 @@ export const createOrder = async (req, res) => {
               $gte: numericQuantity,
             },
 
-            // Price must still equal
-            // the price that was scored.
             selling: Number(candidate.price),
           },
 
@@ -607,10 +527,6 @@ export const createOrder = async (req, res) => {
         );
       }
 
-      // =================================================
-      // 21. OUT OF STOCK
-      // =================================================
-
       if (Number(updatedProduct.stockQty) <= 0) {
         await productModel.updateOne(
           {
@@ -630,7 +546,7 @@ export const createOrder = async (req, res) => {
       }
 
       // =================================================
-      // 22. SELECTED PRODUCT
+      // CREATE ORDER
       // =================================================
 
       const selectedProduct = selectedCandidate.product;
@@ -639,28 +555,10 @@ export const createOrder = async (req, res) => {
 
       const totalAmount = Number((selectedPrice * numericQuantity).toFixed(2));
 
-      // =================================================
-      // 23. UNIT
-      // =================================================
-
       const requestedUnit = typeof unit === "string" ? unit.trim() : "";
 
       const selectedUnit =
         requestedUnit || String(selectedProduct.weightUnit || "pcs").trim();
-
-      // =================================================
-      // 24. CREATE ORDER
-      //
-      // IMPORTANT:
-      //
-      // We do NOT use:
-      //
-      // Order.create([doc], { session })
-      //
-      // That caused your Mongoose ordered:true error.
-      //
-      // Single document + save({ session }) is simpler.
-      // =================================================
 
       const createdOrder = new Order({
         retailerId,
@@ -725,10 +623,7 @@ export const createOrder = async (req, res) => {
       });
 
       // =================================================
-      // 25. CREATE LEDGER ENTRIES
-      //
-      // insertMany is ideal because we actually have
-      // multiple ledger documents.
+      // LEDGER
       // =================================================
 
       await Ledger.insertMany(
@@ -765,15 +660,12 @@ export const createOrder = async (req, res) => {
             source: "Order",
           },
         ],
+
         {
           session,
           ordered: true,
         },
       );
-
-      // =================================================
-      // 26. SELECTION STRATEGY
-      // =================================================
 
       const wasNewOpportunity =
         selectedCandidate.lifetimeOrders === 0 &&
@@ -783,18 +675,10 @@ export const createOrder = async (req, res) => {
         ? "new_wholesaler_opportunity"
         : "balanced_smart_selection";
 
-      // =================================================
-      // 27. WHOLESALER DETAILS
-      // =================================================
-
       const selectedWholesaler = wholesalerUsers.find(
         (wholesaler) =>
           String(wholesaler._id) === String(selectedProduct.ownerId),
       );
-
-      // =================================================
-      // 28. STORE TRANSACTION RESULT
-      // =================================================
 
       transactionResult = {
         createdOrder,
@@ -849,10 +733,6 @@ export const createOrder = async (req, res) => {
       };
     });
 
-    // =====================================================
-    // 29. TRANSACTION COMMITTED
-    // =====================================================
-
     if (!transactionResult || !transactionResult.createdOrder) {
       return res.status(500).json({
         success: false,
@@ -860,11 +740,43 @@ export const createOrder = async (req, res) => {
       });
     }
 
+    const strategy = transactionResult.selection.strategy;
+
+    const newOrder = transactionResult.createdOrder;
+
     // =====================================================
-    // 30. SUCCESS RESPONSE
+    // NOTIFY WHOLESALER: NEW ORDER
     // =====================================================
 
-    const strategy = transactionResult.selection.strategy;
+    await safeNotify({
+      recipientId: newOrder.wholesalerId,
+
+      actorId: newOrder.retailerId,
+
+      orderId: newOrder._id,
+
+      type: "new_order",
+
+      title: "New Order Received",
+
+      message: `New order for ${newOrder.productName} • ${newOrder.quantity} ${
+        newOrder.unit || "units"
+      } • ${formatNotificationMoney(newOrder.totalAmount)}`,
+
+      link: `/order/${newOrder._id}`,
+
+      dedupeKey: `order:${newOrder._id}:new-order`,
+
+      meta: {
+        productName: newOrder.productName,
+
+        quantity: newOrder.quantity,
+
+        unit: newOrder.unit || "units",
+
+        totalAmount: Number(newOrder.totalAmount || 0),
+      },
+    });
 
     return res.status(201).json({
       success: true,
@@ -887,16 +799,13 @@ export const createOrder = async (req, res) => {
 
     const errorMessage = String(error?.message || "");
 
-    // =====================================================
-    // TRANSACTION SUPPORT ERROR
-    // =====================================================
-
     if (
       errorMessage.includes("Transaction numbers are only allowed") ||
       errorMessage.toLowerCase().includes("replica set")
     ) {
       return res.status(500).json({
         success: false,
+
         message:
           "MongoDB transactions are unavailable. Use MongoDB Atlas or a replica-set MongoDB deployment.",
       });
@@ -908,10 +817,6 @@ export const createOrder = async (req, res) => {
       message: error?.message || "Failed to create order",
     });
   } finally {
-    // =====================================================
-    // 31. ALWAYS END SESSION
-    // =====================================================
-
     if (session) {
       try {
         await session.endSession();
@@ -921,7 +826,10 @@ export const createOrder = async (req, res) => {
     }
   }
 };
+
+// =====================================================
 // GET WHOLESALERS
+// =====================================================
 
 export const getWholesalers = async (req, res) => {
   try {
@@ -946,7 +854,7 @@ export const getWholesalers = async (req, res) => {
 };
 
 // =====================================================
-// GET RETAILER ORDERS
+// RETAILER ORDERS
 // =====================================================
 
 export const getOrdersForRetailer = async (req, res) => {
@@ -954,8 +862,12 @@ export const getOrdersForRetailer = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Retailer" || !isUser(req.params.id, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
+
     const orders = await Order.find({
       retailerId: req.userId,
     })
@@ -973,7 +885,7 @@ export const getOrdersForRetailer = async (req, res) => {
 };
 
 // =====================================================
-// GET WHOLESALER ORDERS
+// WHOLESALER ORDERS
 // =====================================================
 
 export const getOrdersForWholesaler = async (req, res) => {
@@ -981,8 +893,12 @@ export const getOrdersForWholesaler = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Wholesaler" || !isUser(req.params.id, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
+
     const orders = await Order.find({
       wholesalerId: req.userId,
     })
@@ -1012,14 +928,18 @@ export const updateOrderStatus = async (req, res) => {
     if (req.user.role !== "Wholesaler") {
       return res.status(403).json({
         success: false,
+
         message: "Only wholesalers can update order status",
       });
     }
+
     const allowedStatuses = ["approved", "onTheWay", "delivered", "rejected"];
+
     if (!allowedStatuses.includes(status)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid order status" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order status",
+      });
     }
 
     const existingOrder = await Order.findById(req.params.id);
@@ -1030,12 +950,14 @@ export const updateOrderStatus = async (req, res) => {
         message: "Order not found",
       });
     }
+
     if (!isUser(existingOrder.wholesalerId, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
-    // Delivered / completed orders
-    // cannot be manually changed.
     if (["delivered", "completed"].includes(existingOrder.orderStatus)) {
       return res.status(400).json({
         success: false,
@@ -1048,10 +970,6 @@ export const updateOrderStatus = async (req, res) => {
     const updateData = {
       orderStatus: status,
     };
-
-    // ======================================
-    // APPROVED
-    // ======================================
 
     if (status === "approved") {
       updateData.deliveryDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
@@ -1067,17 +985,9 @@ export const updateOrderStatus = async (req, res) => {
       }
     }
 
-    // ======================================
-    // ON THE WAY
-    // ======================================
-
     if (status === "onTheWay") {
       updateData.orderStatus = "onTheWay";
     }
-
-    // ======================================
-    // DELIVERED
-    // ======================================
 
     if (status === "delivered") {
       updateData.orderStatus = "delivered";
@@ -1085,17 +995,81 @@ export const updateOrderStatus = async (req, res) => {
       updateData.deliveredAt = new Date();
     }
 
-    // ======================================
-    // REJECTED
-    // ======================================
-
     if (status === "rejected") {
       updateData.orderStatus = "rejected";
     }
 
-    const order = await Order.findByIdAndUpdate(req.params.id, updateData, {
-      new: true,
-    });
+    const order = await Order.findByIdAndUpdate(
+      req.params.id,
+
+      updateData,
+
+      {
+        new: true,
+      },
+    );
+
+    // =================================================
+    // STATUS NOTIFICATIONS
+    // =================================================
+
+    const statusNotifications = {
+      approved: {
+        type: "order_approved",
+
+        title: "Order Approved",
+
+        message: `Your order for ${order.productName} has been approved.`,
+      },
+
+      onTheWay: {
+        type: "order_on_the_way",
+
+        title: "Order On The Way",
+
+        message: `Your order for ${order.productName} is on the way.`,
+      },
+
+      delivered: {
+        type: "order_delivered",
+
+        title: "Order Delivered",
+
+        message: `Your order for ${order.productName} has been delivered.`,
+      },
+
+      rejected: {
+        type: "order_rejected",
+
+        title: "Order Rejected",
+
+        message: `Your order for ${order.productName} was rejected.`,
+      },
+    };
+
+    const statusNotification = statusNotifications[status];
+
+    if (statusNotification) {
+      await safeNotify({
+        recipientId: order.retailerId,
+
+        actorId: order.wholesalerId,
+
+        orderId: order._id,
+
+        ...statusNotification,
+
+        link: `/order/${order._id}`,
+
+        dedupeKey: `order:${order._id}:${statusNotification.type}`,
+
+        meta: {
+          requestedStatus: status,
+
+          orderStatus: order.orderStatus,
+        },
+      });
+    }
 
     return res.json({
       success: true,
@@ -1105,17 +1079,18 @@ export const updateOrderStatus = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.log("STATUS UPDATE ERROR:", error);
+    console.error("STATUS UPDATE ERROR:", error);
 
     return res.status(500).json({
       success: false,
+
       message: error.message,
     });
   }
 };
 
 // =====================================================
-// DEMO PAYMENT HELPERS
+// PAYMENT HELPERS
 // =====================================================
 
 const ALLOWED_MOCK_PAYMENT_METHODS = ["upi", "card", "netbanking"];
@@ -1157,7 +1132,6 @@ const validateMockPaymentPayload = (req, expectedAmount) => {
     };
   }
 
-  // Never trust amount from frontend.
   if (Math.abs(clientAmount - serverAmount) > 0.01) {
     return {
       error: "Payment amount does not match the order amount",
@@ -1190,9 +1164,10 @@ export const payAdvance = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Retailer") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Only retailers can pay for orders" });
+      return res.status(403).json({
+        success: false,
+        message: "Only retailers can pay for orders",
+      });
     }
 
     const order = await Order.findById(req.params.id);
@@ -1203,13 +1178,13 @@ export const payAdvance = async (req, res) => {
         message: "Order not found",
       });
     }
-    if (!isUser(order.retailerId, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
-    }
 
-    // ======================================
-    // ADVANCE MUST BE REQUESTED
-    // ======================================
+    if (!isUser(order.retailerId, req.userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
 
     if (!order.advanceRequested) {
       return res.status(400).json({
@@ -1218,10 +1193,6 @@ export const payAdvance = async (req, res) => {
         message: "Advance payment has not been requested for this order",
       });
     }
-
-    // ======================================
-    // PREVENT DOUBLE PAYMENT
-    // ======================================
 
     if (order.advancePaid) {
       return res.status(400).json({
@@ -1241,10 +1212,6 @@ export const payAdvance = async (req, res) => {
       });
     }
 
-    // ======================================
-    // VALIDATE FAKE PAYMENT
-    // ======================================
-
     const payment = validateMockPaymentPayload(req, expectedAmount);
 
     if (payment.error) {
@@ -1253,10 +1220,6 @@ export const payAdvance = async (req, res) => {
         message: payment.error,
       });
     }
-
-    // ======================================
-    // DUPLICATE TRANSACTION
-    // ======================================
 
     if (await transactionAlreadyExists(payment.transactionId)) {
       return res.status(409).json({
@@ -1271,10 +1234,6 @@ export const payAdvance = async (req, res) => {
     if (!Array.isArray(order.paymentHistory)) {
       order.paymentHistory = [];
     }
-
-    // ======================================
-    // SAVE PAYMENT HISTORY
-    // ======================================
 
     order.paymentHistory.push({
       transactionId: payment.transactionId,
@@ -1292,10 +1251,6 @@ export const payAdvance = async (req, res) => {
       paidAt,
     });
 
-    // ======================================
-    // LATEST PAYMENT DETAILS
-    // ======================================
-
     order.lastPaymentTransactionId = payment.transactionId;
 
     order.lastPaymentMethod = payment.paymentMethod;
@@ -1306,10 +1261,6 @@ export const payAdvance = async (req, res) => {
 
     order.lastPaymentAt = paidAt;
 
-    // ======================================
-    // ORDER PAYMENT STATE
-    // ======================================
-
     order.advancePaid = true;
 
     order.paymentStatus = "advancePaid";
@@ -1318,9 +1269,7 @@ export const payAdvance = async (req, res) => {
 
     await order.save();
 
-    // ======================================
     // RETAILER LEDGER
-    // ======================================
 
     await Ledger.create({
       userId: order.retailerId,
@@ -1336,9 +1285,7 @@ export const payAdvance = async (req, res) => {
       note: `Advance payment paid • ${payment.transactionId}`,
     });
 
-    // ======================================
     // WHOLESALER LEDGER
-    // ======================================
 
     await Ledger.create({
       userId: order.wholesalerId,
@@ -1352,6 +1299,38 @@ export const payAdvance = async (req, res) => {
       amount: payment.amount,
 
       note: `Advance payment received • ${payment.transactionId}`,
+    });
+
+    // =================================================
+    // NOTIFY WHOLESALER
+    // =================================================
+
+    await safeNotify({
+      recipientId: order.wholesalerId,
+
+      actorId: order.retailerId,
+
+      orderId: order._id,
+
+      type: "advance_paid",
+
+      title: "Advance Payment Received",
+
+      message: `Advance payment of ${formatNotificationMoney(
+        payment.amount,
+      )} received for ${order.productName}.`,
+
+      link: `/order/${order._id}`,
+
+      dedupeKey: `order:${order._id}:advance-paid`,
+
+      meta: {
+        transactionId: payment.transactionId,
+
+        paymentMethod: payment.paymentMethod,
+
+        amount: Number(payment.amount || 0),
+      },
     });
 
     return res.json({
@@ -1389,7 +1368,7 @@ export const payAdvance = async (req, res) => {
 };
 
 // =====================================================
-// COMPLETE PAYMENT
+// COMPLETE FINAL PAYMENT
 // =====================================================
 
 export const completePayment = async (req, res) => {
@@ -1397,9 +1376,10 @@ export const completePayment = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Retailer") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Only retailers can pay for orders" });
+      return res.status(403).json({
+        success: false,
+        message: "Only retailers can pay for orders",
+      });
     }
 
     const order = await Order.findById(req.params.id);
@@ -1407,17 +1387,16 @@ export const completePayment = async (req, res) => {
     if (!order) {
       return res.status(404).json({
         success: false,
-
         message: "Order not found",
       });
     }
-    if (!isUser(order.retailerId, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
-    }
 
-    // ======================================
-    // FINAL PAYMENT MUST BE REQUESTED
-    // ======================================
+    if (!isUser(order.retailerId, req.userId)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
 
     if (!order.finalPaymentRequested) {
       return res.status(400).json({
@@ -1427,10 +1406,6 @@ export const completePayment = async (req, res) => {
       });
     }
 
-    // ======================================
-    // PREVENT DOUBLE PAYMENT
-    // ======================================
-
     if (order.fullPaymentDone) {
       return res.status(400).json({
         success: false,
@@ -1438,10 +1413,6 @@ export const completePayment = async (req, res) => {
         message: "Final payment has already been completed",
       });
     }
-
-    // IMPORTANT:
-    // Save amount BEFORE setting
-    // remainingAmount to zero.
 
     const finalPaymentAmount = Number(order.remainingAmount || 0);
 
@@ -1453,23 +1424,14 @@ export const completePayment = async (req, res) => {
       });
     }
 
-    // ======================================
-    // VALIDATE FAKE PAYMENT
-    // ======================================
-
     const payment = validateMockPaymentPayload(req, finalPaymentAmount);
 
     if (payment.error) {
       return res.status(400).json({
         success: false,
-
         message: payment.error,
       });
     }
-
-    // ======================================
-    // DUPLICATE TRANSACTION
-    // ======================================
 
     if (await transactionAlreadyExists(payment.transactionId)) {
       return res.status(409).json({
@@ -1484,10 +1446,6 @@ export const completePayment = async (req, res) => {
     if (!Array.isArray(order.paymentHistory)) {
       order.paymentHistory = [];
     }
-
-    // ======================================
-    // SAVE FINAL PAYMENT HISTORY
-    // ======================================
 
     order.paymentHistory.push({
       transactionId: payment.transactionId,
@@ -1505,10 +1463,6 @@ export const completePayment = async (req, res) => {
       paidAt,
     });
 
-    // ======================================
-    // LATEST PAYMENT DETAILS
-    // ======================================
-
     order.lastPaymentTransactionId = payment.transactionId;
 
     order.lastPaymentMethod = payment.paymentMethod;
@@ -1518,10 +1472,6 @@ export const completePayment = async (req, res) => {
     order.lastPaymentAmount = payment.amount;
 
     order.lastPaymentAt = paidAt;
-
-    // ======================================
-    // COMPLETE ORDER
-    // ======================================
 
     order.fullPaymentDone = true;
 
@@ -1533,9 +1483,7 @@ export const completePayment = async (req, res) => {
 
     await order.save();
 
-    // ======================================
     // RETAILER LEDGER
-    // ======================================
 
     await Ledger.create({
       userId: order.retailerId,
@@ -1551,9 +1499,7 @@ export const completePayment = async (req, res) => {
       note: `Final payment completed • ${payment.transactionId}`,
     });
 
-    // ======================================
     // WHOLESALER LEDGER
-    // ======================================
 
     await Ledger.create({
       userId: order.wholesalerId,
@@ -1567,6 +1513,38 @@ export const completePayment = async (req, res) => {
       amount: finalPaymentAmount,
 
       note: `Final payment received • ${payment.transactionId}`,
+    });
+
+    // =================================================
+    // NOTIFY WHOLESALER
+    // =================================================
+
+    await safeNotify({
+      recipientId: order.wholesalerId,
+
+      actorId: order.retailerId,
+
+      orderId: order._id,
+
+      type: "payment_completed",
+
+      title: "Full Payment Received",
+
+      message: `Final payment of ${formatNotificationMoney(
+        finalPaymentAmount,
+      )} received for ${order.productName}.`,
+
+      link: `/order/${order._id}`,
+
+      dedupeKey: `order:${order._id}:payment-completed`,
+
+      meta: {
+        transactionId: payment.transactionId,
+
+        paymentMethod: payment.paymentMethod,
+
+        amount: Number(finalPaymentAmount || 0),
+      },
     });
 
     return res.json({
@@ -1614,6 +1592,7 @@ export const requestAdvancePayment = async (req, res) => {
     if (req.user.role !== "Wholesaler") {
       return res.status(403).json({
         success: false,
+
         message: "Only wholesalers can request advance payment",
       });
     }
@@ -1628,17 +1607,21 @@ export const requestAdvancePayment = async (req, res) => {
         message: "Order not found",
       });
     }
+
     if (!isUser(order.wholesalerId, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
     const percentage = Number(advancePercentage);
 
-    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
+    if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) {
       return res.status(400).json({
         success: false,
 
-        message: "Advance percentage must be between 0 and 100",
+        message: "Advance percentage must be between 1 and 100",
       });
     }
 
@@ -1658,6 +1641,38 @@ export const requestAdvancePayment = async (req, res) => {
 
     await order.save();
 
+    // =================================================
+    // NOTIFY RETAILER
+    // =================================================
+
+    await safeNotify({
+      recipientId: order.retailerId,
+
+      actorId: order.wholesalerId,
+
+      orderId: order._id,
+
+      type: "advance_requested",
+
+      title: "Advance Payment Requested",
+
+      message: `${percentage}% advance requested • ${formatNotificationMoney(
+        advanceAmount,
+      )} for ${order.productName}.`,
+
+      link: `/order/${order._id}`,
+
+      dedupeKey: `order:${order._id}:advance-requested`,
+
+      meta: {
+        advancePercentage: percentage,
+
+        advanceAmount: Number(advanceAmount || 0),
+
+        remainingAmount: Number(remainingAmount || 0),
+      },
+    });
+
     return res.json({
       success: true,
 
@@ -1666,8 +1681,11 @@ export const requestAdvancePayment = async (req, res) => {
       order,
     });
   } catch (error) {
+    console.error("REQUEST ADVANCE ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: error.message,
     });
   }
@@ -1684,6 +1702,7 @@ export const requestFinalPayment = async (req, res) => {
     if (req.user.role !== "Wholesaler") {
       return res.status(403).json({
         success: false,
+
         message: "Only wholesalers can request final payment",
       });
     }
@@ -1696,8 +1715,12 @@ export const requestFinalPayment = async (req, res) => {
         message: "Order not found",
       });
     }
+
     if (!isUser(order.wholesalerId, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
     if (order.orderStatus !== "delivered") {
@@ -1728,6 +1751,34 @@ export const requestFinalPayment = async (req, res) => {
 
     await order.save();
 
+    // =================================================
+    // NOTIFY RETAILER
+    // =================================================
+
+    await safeNotify({
+      recipientId: order.retailerId,
+
+      actorId: order.wholesalerId,
+
+      orderId: order._id,
+
+      type: "final_payment_requested",
+
+      title: "Final Payment Requested",
+
+      message: `Final payment of ${formatNotificationMoney(
+        order.remainingAmount,
+      )} is due for ${order.productName}.`,
+
+      link: `/order/${order._id}`,
+
+      dedupeKey: `order:${order._id}:final-payment-requested`,
+
+      meta: {
+        remainingAmount: Number(order.remainingAmount || 0),
+      },
+    });
+
     return res.json({
       success: true,
 
@@ -1736,8 +1787,11 @@ export const requestFinalPayment = async (req, res) => {
       order,
     });
   } catch (error) {
+    console.error("REQUEST FINAL PAYMENT ERROR:", error);
+
     return res.status(500).json({
       success: false,
+
       message: error.message,
     });
   }
@@ -1770,7 +1824,6 @@ async function ensureInvoiceNumbers(orders, fallbackWholesalerName) {
 
 // =====================================================
 // RETAILER BILLING
-// ONLY BILLS SENT BY WHOLESALER
 // =====================================================
 
 export const getBillingForRetailer = async (req, res) => {
@@ -1778,8 +1831,12 @@ export const getBillingForRetailer = async (req, res) => {
     await connection();
 
     const { id } = req.params;
+
     if (req.user.role !== "Retailer" || !isUser(id, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
     const orders = await Order.find({
@@ -1800,7 +1857,7 @@ export const getBillingForRetailer = async (req, res) => {
       bills: orders,
     });
   } catch (error) {
-    console.log("BILLING RETAILER ERROR:", error);
+    console.error("BILLING RETAILER ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -1821,8 +1878,12 @@ export const getBillingForWholesaler = async (req, res) => {
     await connection();
 
     const { id } = req.params;
+
     if (req.user.role !== "Wholesaler" || !isUser(id, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
     }
 
     const wholesaler = await userModel.findById(id).select("name shopName");
@@ -1845,7 +1906,7 @@ export const getBillingForWholesaler = async (req, res) => {
       bills: orders,
     });
   } catch (error) {
-    console.log("BILLING WHOLESALER ERROR:", error);
+    console.error("BILLING WHOLESALER ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -1866,9 +1927,11 @@ export const sendBillToRetailer = async (req, res) => {
     await connection();
 
     if (req.user.role !== "Wholesaler") {
-      return res
-        .status(403)
-        .json({ success: false, message: "Only wholesalers can send bills" });
+      return res.status(403).json({
+        success: false,
+
+        message: "Only wholesalers can send bills",
+      });
     }
 
     const { id } = req.params;
@@ -1882,13 +1945,14 @@ export const sendBillToRetailer = async (req, res) => {
         message: "Order not found",
       });
     }
-    if (!isUser(order.wholesalerId, req.userId)) {
-      return res.status(403).json({ success: false, message: "Access denied" });
-    }
 
-    // ======================================
-    // MUST BE DELIVERED OR COMPLETED
-    // ======================================
+    if (!isUser(order.wholesalerId, req.userId)) {
+      return res.status(403).json({
+        success: false,
+
+        message: "Access denied",
+      });
+    }
 
     if (!["delivered", "completed"].includes(order.orderStatus)) {
       return res.status(400).json({
@@ -1898,10 +1962,6 @@ export const sendBillToRetailer = async (req, res) => {
       });
     }
 
-    // ======================================
-    // PREVENT DUPLICATE SEND
-    // ======================================
-
     if (order.billSentToRetailer) {
       return res.status(400).json({
         success: false,
@@ -1910,9 +1970,7 @@ export const sendBillToRetailer = async (req, res) => {
       });
     }
 
-    // ======================================
     // GENERATE INVOICE
-    // ======================================
 
     if (!order.invoiceNumber) {
       const wholesaler = await userModel
@@ -1927,15 +1985,41 @@ export const sendBillToRetailer = async (req, res) => {
       );
     }
 
-    // ======================================
-    // SEND BILL
-    // ======================================
-
     order.billSentToRetailer = true;
 
     order.billSentAt = new Date();
 
     await order.save();
+
+    // =================================================
+    // NOTIFY RETAILER
+    // =================================================
+
+    await safeNotify({
+      recipientId: order.retailerId,
+
+      actorId: order.wholesalerId,
+
+      orderId: order._id,
+
+      type: "bill_sent",
+
+      title: "Invoice Available",
+
+      message: `Your invoice${
+        order.invoiceNumber ? ` ${order.invoiceNumber}` : ""
+      } for ${order.productName} is now available.`,
+
+      link: "/billing",
+
+      dedupeKey: `order:${order._id}:bill-sent`,
+
+      meta: {
+        invoiceNumber: order.invoiceNumber || "",
+
+        totalAmount: Number(order.totalAmount || 0),
+      },
+    });
 
     return res.status(200).json({
       success: true,

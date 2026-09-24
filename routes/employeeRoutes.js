@@ -6,22 +6,106 @@ import {
   updateEmployee,
   deleteEmployee,
   addPayment,
-  addAttendance, searchEmployees,
+  addAttendance,
+  cleanupAttendanceDuplicates,
+  searchEmployees,
 } from "../controllers/employeeController.js";
+
 import authUser from "../middlewares/authUser.js";
 
-const router = express.Router();
+const router =
+  express.Router();
 
-router.get("/", authUser, getEmployees);
+// =====================================================
+// GET EMPLOYEES
+// =====================================================
 
-router.post("/add", authUser, addEmployee);
+router.get(
+  "/",
+  authUser,
+  getEmployees
+);
 
-router.put("/update/:id", authUser, updateEmployee);
+// =====================================================
+// SEARCH
+// =====================================================
 
-router.delete("/delete/:id", authUser, deleteEmployee);
+router.get(
+  "/search",
+  authUser,
+  searchEmployees
+);
 
-router.post("/payment/:id", authUser, addPayment);
+// =====================================================
+// ADD EMPLOYEE
+// =====================================================
 
-router.post("/attendance/:id", authUser, addAttendance);
-router.get("/search", authUser, searchEmployees);
+router.post(
+  "/add",
+  authUser,
+  addEmployee
+);
+
+// =====================================================
+// UPDATE EMPLOYEE
+// =====================================================
+
+router.put(
+  "/update/:id",
+  authUser,
+  updateEmployee
+);
+
+// =====================================================
+// DELETE EMPLOYEE
+// =====================================================
+
+router.delete(
+  "/delete/:id",
+  authUser,
+  deleteEmployee
+);
+
+// =====================================================
+// SALARY PAYMENT
+// =====================================================
+
+router.post(
+  "/payment/:id",
+  authUser,
+  addPayment
+);
+
+// =====================================================
+// CLEAN OLD DUPLICATE ATTENDANCE
+//
+// IMPORTANT:
+//
+// This route MUST remain before:
+//
+// /attendance/:id
+//
+// Otherwise Express may interpret:
+//
+// "cleanup"
+//
+// as an employee ID.
+// =====================================================
+
+router.post(
+  "/attendance/cleanup",
+  authUser,
+  cleanupAttendanceDuplicates
+);
+
+// =====================================================
+// SAVE TODAY'S ATTENDANCE
+// =====================================================
+
+router.post(
+  "/attendance/:id",
+  authUser,
+  addAttendance
+);
+
 export default router;

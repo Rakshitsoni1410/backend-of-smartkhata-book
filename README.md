@@ -1,521 +1,87 @@
 # Smart Khata Backend 🚀
 
-Backend API for **Smart Khata Book**, a MERN-based digital business management and ledger application built using **Node.js**, **Express.js**, **MongoDB**, and **Mongoose**.
+Backend API for **Smart Khata Book** — a MERN-stack digital business-management and ledger application built with **Node.js**, **Express.js**, **MongoDB**, and **Mongoose**.
 
-The backend powers the Smart Khata web/mobile ecosystem and handles authentication, retailers, wholesalers, customers, products, orders, inventory, billing, ledger management, employees, reviews, reports, dashboards, payment tracking, and customer portal functionality.
+The backend powers the Smart Khata web and mobile ecosystem, handling authentication, retailer/wholesaler/customer roles, products, inventory, smart supplier selection, orders, demo payments, billing, ledger management, employees, daily attendance, in-app notifications, reviews, dashboards, reports, and the customer portal.
 
----
-
-# 🔗 Project Links
-
-## 🌐 Live Web Application
-
-https://smartkhatabooks.netlify.app/
-
-## ⚙️ Live Backend API
-
-https://backend-of-smartkhata-book-vkcv.vercel.app
-
-## 🌐 Web Frontend Repository
-
-https://github.com/Rakshitsoni1410/web-smartkhatabook
-
-## 📱 Flutter Frontend Repository
-
-https://github.com/Rakshitsoni1410/smartkhatabook
-
-## ⚙️ Backend Repository
-
-https://github.com/Rakshitsoni1410/backend-of-smartkhata-book
+> **Academic note:** The payment system is a mock/demo workflow. No real money is transferred.
 
 ---
 
-# ✨ Main Backend Features
+## 🔗 Project Links
 
-Smart Khata Backend currently supports:
-
-- Secure User Registration and Login
-- Retailer, Wholesaler, and Customer Roles
-- JWT Authentication
-- Single Active Login Session
-- Automatic Old Session Invalidation
-- Login Attempt Rate Limiting
-- Temporary Login Blocking after Repeated Failed Attempts
-- Password Reset through Email
-- Product and Inventory Management
-- Smart Wholesaler Selection
-- Order Management
-- Advance Payment Requests
-- Final Payment Requests
-- Demo Payment Gateway
-- Payment Transaction History
-- Billing and Invoice Generation
-- Bill Sharing from Wholesaler to Retailer
-- Ledger Management
-- Employee Management
-- Reviews
-- Dashboard APIs
-- Business Reports
-- Customer Portal
-- Cloud Deployment
+| Resource          | Link                                                          |
+| ----------------- | ------------------------------------------------------------- |
+| Live Web App      | https://smartkhatabooks.netlify.app/                          |
+| Live Backend API  | https://backend-of-smartkhata-book-vkcv.vercel.app            |
+| Web Frontend Repo | https://github.com/Rakshitsoni1410/web-smartkhatabook         |
+| Flutter App Repo  | https://github.com/Rakshitsoni1410/smartkhatabook             |
+| Backend Repo      | https://github.com/Rakshitsoni1410/backend-of-smartkhata-book |
 
 ---
 
-# 🔐 Authentication & Security
+## 🚀 Getting Started
 
-Smart Khata includes multiple authentication and security layers.
+```bash
+# 1. Clone the repository
+git clone https://github.com/Rakshitsoni1410/backend-of-smartkhata-book.git
 
-## User Authentication
+# 2. Enter the project directory
+cd backend-of-smartkhata-book
 
-- User Registration
-- User Login
-- Phone / Email Based Login Support
-- Password Hashing using bcrypt
-- JWT Token Authentication
-- Protected API Routes
-- Role-Based Access
-- Password Reset
-- Reset Token Expiry
+# 3. Install dependencies
+npm install
 
-## Single Active Session
+# 4. Create your .env file (see Environment Variables below)
 
-Only the most recent login for an account remains valid.
+# 5. Start the development server
+npm run dev
 
-Example:
-
-```text
-Laptop Login
-    ↓
-Session Version = 1
-
-Mobile Login with same account
-    ↓
-Session Version = 2
-
-Laptop Token = Version 1 ❌
-Mobile Token = Version 2 ✅
+# Production
+npm start
 ```
 
-When the old device makes another protected API request, the backend returns:
+Local API base URL:
 
-```text
-401 SESSION_EXPIRED
 ```
-
-The frontend then automatically clears the old session and redirects the user to login.
-
----
-
-# 🛡️ Login Attempt Protection
-
-Smart Khata includes login brute-force protection.
-
-Example flow:
-
-```text
-Wrong Login Attempt 1
-Wrong Login Attempt 2
-Wrong Login Attempt 3
-Wrong Login Attempt 4
-Wrong Login Attempt 5
-
-        ↓
-
-Login Temporarily Blocked
-
-        ↓
-
-HTTP 429 Too Many Requests
-```
-
-Failed login tracking can be stored using Redis so it works correctly with the Vercel serverless backend.
-
-Protection can track:
-
-- IP Address
-- Phone Number / Email Account
-- Failed Login Attempts
-- Temporary Block Duration
-
----
-
-# 👥 User Roles
-
-The backend supports the following roles:
-
-```text
-Retailer
-Wholesaler
-Customer
-```
-
-Each role receives different application features and business workflows.
-
----
-
-# 🛒 Order Management
-
-Smart Khata includes a complete retailer-wholesaler order workflow.
-
-Order lifecycle:
-
-```text
-Pending
-   ↓
-Approved
-   ↓
-Advance Pending
-   ↓
-Processing
-   ↓
-On The Way
-   ↓
-Delivered
-   ↓
-Completed
-```
-
-Supported order statuses:
-
-```text
-pending
-approved
-advancePending
-processing
-onTheWay
-delivered
-completed
-rejected
-```
-
-Backend order functionality includes:
-
-- Create Order
-- Smart Wholesaler Selection
-- Product Matching
-- Stock Availability Check
-- Automatic Stock Reduction
-- Retailer Order History
-- Wholesaler Order History
-- Approve Order
-- Reject Order
-- Mark Order On The Way
-- Mark Order Delivered
-- Complete Order after Final Payment
-
----
-
-# 🤖 Smart Wholesaler Selection
-
-When a retailer places an order, the backend searches available wholesaler products and selects an appropriate wholesaler based on business data such as:
-
-- Product Availability
-- Required Quantity
-- Selling Price
-- Available Stock
-- Rating
-- Reviews
-
-The selected wholesaler is automatically linked to the order.
-
----
-
-# 📦 Inventory Management
-
-Product and inventory functionality includes:
-
-- Add Products
-- Product Details
-- Product Categories
-- Selling Price
-- Stock Quantity
-- Stock Availability
-- Wholesaler Product Ownership
-- Automatic Stock Reduction after Order Placement
-- Out-of-Stock Handling
-
----
-
-# 💳 Payment Management
-
-Smart Khata supports advance and final-payment workflows.
-
-## Advance Payment Flow
-
-```text
-Wholesaler requests advance
-        ↓
-Retailer receives payment request
-        ↓
-Retailer opens Demo Payment Gateway
-        ↓
-Payment completed
-        ↓
-Advance marked as paid
-        ↓
-Order moves to Processing
-```
-
-## Final Payment Flow
-
-```text
-Order Delivered
-        ↓
-Wholesaler requests final payment
-        ↓
-Retailer opens Demo Payment Gateway
-        ↓
-Final payment completed
-        ↓
-Order marked Completed
+http://localhost:4000/api
 ```
 
 ---
 
-# 🧪 Demo Payment Gateway
+## 🔑 Environment Variables
 
-Smart Khata includes a **mock payment gateway for educational and project demonstration purposes**.
+Create a `.env` file in the project root:
 
-No real money is transferred.
+```env
+PORT=4000
 
-Available demo payment methods:
+MONGO_URI=your_mongodb_connection_string
 
-- UPI
-- Card
-- Net Banking
+JWT_SECRET=your_jwt_secret
 
-The demo payment gateway generates transaction IDs similar to:
+CLIENT_URL=https://smartkhatabooks.netlify.app
 
-```text
-SKPAY-M123ABC-XYZ12
+UPSTASH_REDIS_REST_URL=your_upstash_redis_url
+UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
+
+ATTENDANCE_TIMEZONE=Asia/Kolkata
+
+# Email (configure per your implementation)
+EMAIL_USER=your_email_account
+EMAIL_PASS=your_email_app_password
+
+# Cloudinary (when enabled)
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
 ```
 
-The application clearly identifies the gateway as **TEST MODE / Demo Payment Gateway**.
-
-Users should never enter real:
-
-- UPI PINs
-- CVVs
-- Banking Passwords
-- Real Payment Credentials
+> ⚠️ Never commit `.env` files or real secrets to GitHub.
 
 ---
 
-# 🧾 Payment History
-
-Successful demo payments are stored permanently with the related order.
-
-Example:
-
-```json
-{
-  "transactionId": "SKPAY-ABC123",
-  "paymentType": "advance",
-  "paymentMethod": "upi",
-  "amount": 2500,
-  "status": "success",
-  "isMockPayment": true,
-  "paidAt": "2026-09-14T10:30:00.000Z"
-}
-```
-
-Each order can contain multiple payment records.
-
-Example:
-
-```text
-Payment History
-
-├── Advance Payment
-│   ├── Transaction ID
-│   ├── UPI
-│   └── ₹2,500
-│
-└── Final Payment
-    ├── Transaction ID
-    ├── Card
-    └── ₹7,500
-```
-
-The backend also stores the latest payment details:
-
-```text
-lastPaymentTransactionId
-lastPaymentMethod
-lastPaymentType
-lastPaymentAmount
-lastPaymentAt
-```
-
----
-
-# 💰 Payment Status
-
-Supported payment statuses:
-
-```text
-unpaid
-advanceRequested
-advancePaid
-partial
-paid
-```
-
----
-
-# 🧾 Billing & Invoice Management
-
-Smart Khata includes a complete retailer-wholesaler billing workflow.
-
-Flow:
-
-```text
-Order Delivered
-        ↓
-Wholesaler Generates Bill
-        ↓
-Wholesaler Confirms Send Bill
-        ↓
-Bill Sent to Retailer
-        ↓
-Retailer sees Bill in Billing Section
-        ↓
-Retailer can Download / Print Bill
-```
-
-The retailer only sees invoices that have been explicitly sent by the wholesaler.
-
-Invoice information includes:
-
-- Invoice Number
-- Wholesaler Details
-- Retailer Details
-- Product
-- Quantity
-- Price Per Unit
-- Total Amount
-- Payment Status
-- Order Status
-- Invoice Date
-
-Example invoice number:
-
-```text
-ARBROS-14-09-2026-0001
-```
-
----
-
-# 📒 Ledger Management
-
-Smart Khata automatically records financial ledger entries during important business events.
-
-Ledger records can include:
-
-- Order Debit
-- Order Credit
-- Advance Payment
-- Final Payment
-- Retailer Transaction
-- Wholesaler Transaction
-
-Example:
-
-```text
-Retailer
-Debit ₹2,500
-Advance Payment
-
-Wholesaler
-Credit ₹2,500
-Advance Payment Received
-```
-
-Transaction IDs can also be included in payment-related ledger notes.
-
----
-
-# 👨‍💼 Employee Management
-
-Employee-related APIs include:
-
-- Add Employee
-- View Employees
-- Edit Employee
-- Delete Employee
-- Employee Management
-- Salary Tracking
-- Pending Salary Information
-- Payment Records
-
----
-
-# ⭐ Review Management
-
-The backend includes review functionality for business interactions.
-
-Supported operations include:
-
-- Add Review
-- Fetch Reviews
-- Store Ratings
-- Associate Reviews with relevant users/business records
-
-Reviews can also contribute to Smart Khata's wholesaler/product selection logic.
-
----
-
-# 📊 Dashboard APIs
-
-Dashboard APIs provide summarized business information for application screens.
-
-Dashboard data can include:
-
-- Business Overview
-- Order Information
-- Inventory Information
-- Employee Information
-- Payment Information
-- Activity Summary
-
----
-
-# 📈 Reports
-
-Smart Khata includes backend reporting APIs.
-
-Reports can provide business-level information such as:
-
-- Orders
-- Payment Status
-- Stock Information
-- Reviews
-- Ledger Activity
-- Recent Orders
-- Business Performance Information
-
-Report routes are available through:
-
-```text
-/api/reports
-```
-
----
-
-# 👤 Customer Portal
-
-The Customer Portal provides customer-facing business information.
-
-Customer portal functionality can include:
-
-- Ledger Information
-- Transaction History
-- Business Data
-- Customer Account Information
-
----
-
-# 🛠️ Tech Stack
+## 🛠️ Tech Stack
 
 | Technology      | Usage                   |
 | --------------- | ----------------------- |
@@ -533,9 +99,9 @@ Customer portal functionality can include:
 
 ---
 
-# 📂 Backend Project Structure
+## 📂 Project Structure
 
-```text
+```
 backend-of-smartkhata-book/
 │
 ├── config/
@@ -545,11 +111,13 @@ backend-of-smartkhata-book/
 ├── controllers/
 │   ├── userController.js
 │   ├── orderController.js
+│   ├── employeeController.js
+│   ├── notificationController.js
 │   ├── dashboardController.js
 │   ├── reportController.js
 │   └── ...
 │
-├── middleware/
+├── middlewares/
 │   ├── authUser.js
 │   ├── loginRateLimiter.js
 │   └── ...
@@ -559,6 +127,8 @@ backend-of-smartkhata-book/
 │   ├── orderModel.js
 │   ├── productModel.js
 │   ├── ledgerModel.js
+│   ├── employeeModel.js
+│   ├── notificationModel.js
 │   ├── Counter.js
 │   └── ...
 │
@@ -566,9 +136,10 @@ backend-of-smartkhata-book/
 │   ├── userRoute.js
 │   ├── productRoute.js
 │   ├── orderRoutes.js
+│   ├── employeeRoutes.js
+│   ├── notificationRoutes.js
 │   ├── reviewRoutes.js
 │   ├── dashboardRoutes.js
-│   ├── employeeRoutes.js
 │   ├── ledgerRoutes.js
 │   ├── customerPortalRoutes.js
 │   └── reportRoutes.js
@@ -576,6 +147,7 @@ backend-of-smartkhata-book/
 ├── utils/
 │   ├── sendEmail.js
 │   ├── generateInvoiceNumber.js
+│   ├── createNotification.js
 │   └── ...
 │
 ├── .env
@@ -586,127 +158,47 @@ backend-of-smartkhata-book/
 
 ---
 
-# 🚀 Getting Started
+## 📡 API Reference
 
-## 1️⃣ Clone Repository
+### Base URLs
 
-```bash
-git clone https://github.com/Rakshitsoni1410/backend-of-smartkhata-book.git
-```
-
----
-
-## 2️⃣ Open Project Folder
-
-```bash
-cd backend-of-smartkhata-book
-```
+| Environment | URL                                                      |
+| ----------- | -------------------------------------------------------- |
+| Local       | `http://localhost:4000/api`                              |
+| Production  | `https://backend-of-smartkhata-book-vkcv.vercel.app/api` |
 
 ---
 
-## 3️⃣ Install Dependencies
+### 🔐 Authentication / Users
 
-```bash
-npm install
-```
-
----
-
-## 4️⃣ Setup Environment Variables
-
-Create a `.env` file in the root directory.
-
-Example:
-
-```env
-PORT=4000
-
-MONGO_URI=your_mongodb_connection_string
-
-JWT_SECRET=your_jwt_secret
-
-CLIENT_URL=https://smartkhatabooks.netlify.app
-
-UPSTASH_REDIS_REST_URL=your_upstash_redis_url
-
-UPSTASH_REDIS_REST_TOKEN=your_upstash_redis_token
-```
-
-Additional environment variables may be required for email or cloud services depending on configuration.
-
-> Never commit `.env` or real secret keys to GitHub.
+| Method | Endpoint                              | Description                 |
+| ------ | ------------------------------------- | --------------------------- |
+| POST   | `/api/user/register`                  | Register a new user         |
+| POST   | `/api/user/login`                     | Login                       |
+| POST   | `/api/user/forgot-password`           | Request password reset      |
+| POST   | `/api/user/reset-password/:token`     | Reset password              |
+| GET    | `/api/user/wholesalers/:businessType` | Get wholesalers by category |
 
 ---
 
-# ▶️ Run Locally
-
-## Development
-
-```bash
-npm run dev
-```
-
-## Production
-
-```bash
-npm start
-```
-
-The local API should normally run at:
-
-```text
-http://localhost:4000
-```
-
----
-
-# 🌐 API Base URLs
-
-## Local
-
-```text
-http://localhost:4000/api
-```
-
-## Production
-
-```text
-https://backend-of-smartkhata-book-vkcv.vercel.app/api
-```
-
----
-
-# 📡 Important API Routes
-
-## Authentication
-
-| Method | Endpoint                              | Description            |
-| ------ | ------------------------------------- | ---------------------- |
-| POST   | `/api/user/register`                  | Register user          |
-| POST   | `/api/user/login`                     | Login user             |
-| POST   | `/api/user/forgot-password`           | Request password reset |
-| POST   | `/api/user/reset-password/:token`     | Reset password         |
-| GET    | `/api/user/wholesalers/:businessType` | Get wholesalers        |
-
----
-
-## Orders
+### 🛒 Orders
 
 | Method | Endpoint                                | Description                   |
 | ------ | --------------------------------------- | ----------------------------- |
-| POST   | `/api/orders/create`                    | Create order                  |
-| GET    | `/api/orders/retailer/:id`              | Retailer orders               |
-| GET    | `/api/orders/wholesaler/:id`            | Wholesaler orders             |
+| POST   | `/api/orders/create`                    | Create order (auto or manual) |
+| POST   | `/api/orders/recommendations`           | Get supplier recommendations  |
+| GET    | `/api/orders/retailer/:id`              | Retailer order history        |
+| GET    | `/api/orders/wholesaler/:id`            | Wholesaler order history      |
 | PATCH  | `/api/orders/:id/status`                | Update order status           |
 | PATCH  | `/api/orders/:id/request-advance`       | Request advance payment       |
-| PATCH  | `/api/orders/:id/pay-advance`           | Complete demo advance payment |
+| PATCH  | `/api/orders/:id/pay-advance`           | Record demo advance payment   |
 | PATCH  | `/api/orders/:id/request-final-payment` | Request final payment         |
-| PATCH  | `/api/orders/:id/complete-payment`      | Complete demo final payment   |
+| PATCH  | `/api/orders/:id/complete-payment`      | Record demo final payment     |
 | PATCH  | `/api/orders/:id/send-bill`             | Send bill to retailer         |
 
 ---
 
-## Billing
+### 🧾 Billing
 
 | Method | Endpoint                             | Description                |
 | ------ | ------------------------------------ | -------------------------- |
@@ -715,279 +207,466 @@ https://backend-of-smartkhata-book-vkcv.vercel.app/api
 
 ---
 
-## Reports
+### 👨‍💼 Employees
 
-```text
-/api/reports
-```
-
----
-
-## Ledger
-
-```text
-/api/ledger
-```
-
----
-
-## Employees
-
-```text
-/api/employees
-```
+| Method | Endpoint                            | Description                    |
+| ------ | ----------------------------------- | ------------------------------ |
+| GET    | `/api/employees`                    | List all employees             |
+| GET    | `/api/employees/search`             | Search employees               |
+| POST   | `/api/employees/add`                | Add employee                   |
+| PUT    | `/api/employees/update/:id`         | Update employee                |
+| DELETE | `/api/employees/delete/:id`         | Delete employee                |
+| POST   | `/api/employees/payment/:id`        | Record salary payment          |
+| POST   | `/api/employees/attendance/:id`     | Mark attendance                |
+| POST   | `/api/employees/attendance/cleanup` | Normalize duplicate attendance |
 
 ---
 
-## Reviews
+### 🔔 Notifications
 
-```text
-/api/reviews
-```
-
----
-
-## Dashboard
-
-```text
-/api/dashboard
-```
+| Method | Endpoint                          | Description               |
+| ------ | --------------------------------- | ------------------------- |
+| GET    | `/api/notifications`              | Get all notifications     |
+| GET    | `/api/notifications/unread-count` | Unread notification count |
+| PATCH  | `/api/notifications/read-all`     | Mark all as read          |
+| PATCH  | `/api/notifications/:id/read`     | Mark one as read          |
+| DELETE | `/api/notifications/:id`          | Delete one notification   |
+| DELETE | `/api/notifications/clear-all`    | Clear all notifications   |
 
 ---
 
-## Customer Portal
+### Other Routes
 
-```text
-/api/customer-portal
-```
+| Base Route             | Description            |
+| ---------------------- | ---------------------- |
+| `/api/ledger`          | Ledger management      |
+| `/api/reports`         | Business reports       |
+| `/api/reviews`         | Reviews & ratings      |
+| `/api/dashboard`       | Dashboard summary data |
+| `/api/customer-portal` | Customer-facing data   |
 
 ---
 
-# 🔄 Complete Business Flow
+## ✨ Features
 
-```text
-Retailer Places Order
+### 🔐 Authentication & Security
+
+- Registration & login with phone / email support
+- Password hashing with **bcrypt**
+- **JWT** authentication with session version validation
+- Single active session enforcement — old sessions are invalidated on new login
+- Forgot password / OTP reset with token expiry
+- Role-based access control (Retailer · Wholesaler · Customer)
+
+**Single Session Example:**
+
+```
+Laptop Login   → Session Version = 1
+Mobile Login   → Session Version = 2
+
+Laptop token (v1) ❌ — rejected with 401 SESSION_EXPIRED
+Mobile token  (v2) ✅ — valid
+```
+
+**Login Rate Limiting (Redis / Upstash):**
+
+```
+5 Failed Login Attempts
         ↓
-Backend Selects Wholesaler
+Account Temporarily Blocked
         ↓
-Stock Reserved / Reduced
-        ↓
-Wholesaler Approves Order
-        ↓
-Wholesaler Requests Advance
-        ↓
-Retailer Pays using Demo Gateway
-        ↓
-Transaction Stored
-        ↓
-Order Processing
-        ↓
-Order On The Way
-        ↓
+HTTP 429 Too Many Requests
+```
+
+Tracks by IP address and account (email / phone).
+
+---
+
+### 👥 User Roles
+
+| Role       | Permissions                                                      |
+| ---------- | ---------------------------------------------------------------- |
+| Retailer   | Place orders · Pay demo invoices · View bills & ledger           |
+| Wholesaler | Manage products · Approve orders · Request payments · Send bills |
+| Customer   | View account · Ledger · Transaction history                      |
+
+---
+
+### 📦 Product & Inventory Management
+
+- Add / Update / Delete products with category, price, and stock data
+- Wholesaler product ownership
+- Eligible supplier discovery for order creation
+- Stock validation during order creation
+- Automatic stock reservation / reduction on successful order
+
+---
+
+### 🛒 Order Management
+
+**Lifecycle:**
+
+```
+pending → approved → advancePending → processing → onTheWay → delivered → completed
+```
+
+Additional status: `rejected`
+
+**Backend handles:**
+
+- Create order with smart or manual supplier selection
+- Retailer & wholesaler order history with details
+- Approve / reject · Request & record demo advance payment
+- Mark processing · On the Way · Delivered
+- Request & record demo final payment · Complete order
+- Generate / send bill · Store payment history
+- Create in-app notifications on each status change
+
+---
+
+### 🤝 Smart Supplier Selection
+
+#### ⚡ Smart Auto
+
+Rule-based scoring selects the best eligible wholesaler automatically, considering:
+
+- Product availability & required quantity
+- Selling price (price-protection rule applied)
+- Available stock, rating, review count
+- Fair order distribution
+
+> **Not a trained AI/ML model** — the logic is heuristic and rule-based.
+
+#### 👤 Manual + Smart Suggestions
+
+```
+POST /api/orders/recommendations
+```
+
+Returns ranked wholesalers with reasons and a smart-recommendation flag. The retailer picks one, and the frontend submits:
+
+```json
+{
+  "productName": "Rice",
+  "quantity": 10,
+  "unit": "kg",
+  "selectionMode": "manual",
+  "selectedWholesalerId": "ObjectId",
+  "selectedProductId": "ObjectId"
+}
+```
+
+**Before creating the order, the backend revalidates:**
+
+- Wholesaler & product identity
+- Product name match
+- Current price & available stock
+- Required quantity can be fulfilled
+
+Orders store full selection metadata: mode, recommendation score, reasons, whether the recommendation was accepted, and strategy used.
+
+---
+
+### 💳 Demo Payment Gateway
+
+> ⚠️ No real money is transferred — demo/mock only.
+
+Supported methods: **UPI · Card · Net Banking**
+
+```
+Payment Requested
+       ↓
+Retailer Opens Demo Gateway
+       ↓
+Demo Method Selected & Confirmed
+       ↓
+Backend Validates Amount
+       ↓
+Demo Transaction Stored
+       ↓
+Order Payment State Updated
+```
+
+**Payment history stored per order:**
+
+```json
+{
+  "transactionId": "SKPAY-ABC123",
+  "paymentType": "advance",
+  "paymentMethod": "upi",
+  "amount": 2500,
+  "status": "success",
+  "isMockPayment": true,
+  "paidAt": "2026-09-14T10:30:00.000Z"
+}
+```
+
+**Payment statuses:** `unpaid · advanceRequested · advancePaid · partial · paid`
+
+---
+
+### 🧾 Billing & Invoice Management
+
+```
 Order Delivered
         ↓
-Wholesaler Generates / Sends Bill
+Wholesaler Generates Bill
         ↓
-Wholesaler Requests Final Payment
+Wholesaler Sends Bill
         ↓
-Retailer Completes Demo Payment
+Retailer Sees Bill
         ↓
-Transaction Stored
-        ↓
-Order Completed
-        ↓
-Ledger + Billing + Reports Updated
+Retailer Prints / Downloads
+```
+
+Invoice includes: Invoice number · Wholesaler & retailer details · Product · Quantity · Price per unit · Total · Payment status · Order status · Invoice date.
+
+Example invoice number:
+
+```
+ARBROS-14-09-2026-0001
 ```
 
 ---
 
-# 💾 Database
+### 📒 Ledger Management
 
-Smart Khata uses **MongoDB** as its primary database.
+Automatically records entries for:
 
-Important collections include:
+- Order debit / credit
+- Advance payment received / made
+- Final payment received / made
 
-- Users
-- Products
-- Orders
-- Ledger Entries
-- Employees
-- Reviews
-- Invoice Counters
-- Other Business Data
+Each entry includes transaction notes and is linked to the relevant business party.
 
 ---
 
-# ☁️ Deployment
+### 👨‍💼 Employee Management
 
-## Frontend
+- Add / Edit / Delete employees with salary and role information
+- Salary payment records & pending salary tracking
+- Daily attendance (Present / Absent / Leave)
 
-Hosted on **Netlify**:
+**One record per employee per day** (keyed by business date `YYYY-MM-DD`):
 
-```text
-https://smartkhatabooks.netlify.app/
+```
+24 Sep → Present
+24 Sep → Update to Absent  ← same record updated, no duplicate
+25 Sep → New record
 ```
 
-## Backend
+Set your timezone in `.env`:
 
-Hosted on **Vercel**:
-
-```text
-https://backend-of-smartkhata-book-vkcv.vercel.app
+```env
+ATTENDANCE_TIMEZONE=Asia/Kolkata
 ```
 
-## Database
+Clean up old duplicate attendance with:
 
-MongoDB is used for persistent backend storage.
-
----
-
-# 🔒 Security Features
-
-Smart Khata includes:
-
-- Password Hashing
-- JWT Authentication
-- Protected Routes
-- Single Active Session
-- Session Version Validation
-- Automatic Old Session Logout
-- Failed Login Tracking
-- Temporary Login Blocking
-- Password Reset Token Expiry
-- Server-Side Payment Amount Validation
-- Duplicate Demo Transaction Protection
-- CORS Protection
-- Environment Variable Secrets
+```
+POST /api/employees/attendance/cleanup
+```
 
 ---
 
-# 🧪 Educational Payment Disclaimer
+### 🔔 In-App Notifications
 
-The Smart Khata payment gateway is a **demo/mock payment system only**.
+Notification model stores: recipient · actor · related order · type · title · message · link · read state · metadata · dedupe key.
 
-It does not:
+Events that create notifications:
 
-- Transfer real money
-- Connect to real banks
-- Process real cards
-- Process real UPI payments
-- Store real banking credentials
+| Event                   | Recipient  |
+| ----------------------- | ---------- |
+| New order               | Wholesaler |
+| Order status update     | Retailer   |
+| Advance requested       | Retailer   |
+| Advance paid            | Wholesaler |
+| Final payment requested | Retailer   |
+| Final payment completed | Wholesaler |
+| Bill sent               | Retailer   |
 
-The payment feature exists only to demonstrate business payment workflows in the academic project.
+> Notification creation is a best-effort secondary action — a notification failure never breaks the main business operation.
 
 ---
 
-# 🎓 Academic Information
+### ⭐ Reviews
+
+- Add & fetch reviews with ratings
+- Associate reviews with users / business records
+- Ratings and review counts contribute to smart supplier scoring
+
+---
+
+### 📊 Dashboard APIs
+
+Provides aggregated business data: orders, inventory, employees, payments, and activity summaries per role.
+
+---
+
+### 📈 Reports
+
+```
+GET /api/reports/...
+```
+
+Report data: orders · recent orders · payment status · stock · reviews · ledger activity · business performance.
+
+---
+
+### 👤 Customer Portal
+
+```
+GET /api/customer-portal/...
+```
+
+Customer-facing ledger, transaction history, and account data.
+
+---
+
+## 🔒 Security Features
+
+- Password hashing with bcrypt
+- JWT authentication & session version validation
+- Single active session + automatic old-session rejection
+- Failed login tracking with temporary blocking (Redis / Upstash)
+- Password reset with token expiry
+- Role checks & ownership validation on all protected routes
+- Server-side payment amount validation
+- Duplicate demo transaction protection
+- Manual order selection revalidation (price + stock rechecked server-side)
+- CORS configuration
+- Environment variable secrets — never hardcoded
+
+---
+
+## 💾 Database Collections
+
+| Collection     | Description                       |
+| -------------- | --------------------------------- |
+| Users          | Retailers, wholesalers, customers |
+| Products       | Wholesaler inventory              |
+| Orders         | Full order lifecycle              |
+| Ledger Entries | Financial records                 |
+| Employees      | Staff & salary data               |
+| Notifications  | In-app notification records       |
+| Reviews        | Ratings & feedback                |
+| Counter        | Invoice number sequences          |
+
+---
+
+## 🔄 Complete Business Flow
+
+```
+Retailer Needs Stock
+        ↓
+Select Ordering Mode
+   ┌────┴────────────────┐
+   ↓                     ↓
+Smart Auto           Choose Myself
+   ↓                     ↓
+Backend Scores       Recommendations
+Suppliers            Returned
+   ↓                     ↓
+                  Retailer Selects
+   └──────────┬──────────┘
+              ↓
+Backend Revalidates Product + Stock + Price
+              ↓
+        Order Created
+              ↓
+    Stock Reserved / Reduced
+              ↓
+    Wholesaler Notification
+              ↓
+      Wholesaler Approves
+              ↓
+       Advance Requested
+              ↓
+  Retailer Completes Demo Payment
+              ↓
+          Processing
+              ↓
+           On The Way
+              ↓
+           Delivered
+              ↓
+    Bill Generated & Sent
+              ↓
+  Final Payment Requested
+              ↓
+  Retailer Completes Demo Payment
+              ↓
+           Completed
+              ↓
+  Ledger / Billing / Reports Updated
+```
+
+---
+
+## ☁️ Deployment
+
+| Layer         | Platform        | URL                                                |
+| ------------- | --------------- | -------------------------------------------------- |
+| Frontend      | Netlify         | https://smartkhatabooks.netlify.app/               |
+| Backend       | Vercel          | https://backend-of-smartkhata-book-vkcv.vercel.app |
+| Database      | MongoDB Atlas   | Persistent cloud storage                           |
+| Session Cache | Redis / Upstash | Distributed login-attempt tracking                 |
+
+---
+
+## 🔮 Future Enhancements
+
+- Real payment gateway integration
+- Native push notifications
+- WebSocket real-time updates & instant session logout
+- GST invoice support & advanced PDF export
+- Advanced analytics & demand forecasting
+- Admin dashboard & multi-shop management
+- Automated payment reminders
+- Advanced audit logs
+- Optional ML-based recommendations
+
+---
+
+## 🎓 Academic Information
 
 | Detail       | Information          |
 | ------------ | -------------------- |
-| Course       | MCA                  |
-| Semester     | 2                    |
+| Project      | Smart Khata Book     |
+| Course       | MCA — Semester 2     |
 | Project Type | Group Mini Project   |
 | Backend      | Node.js + Express.js |
 | Database     | MongoDB              |
-| Frontend     | React / Flutter      |
+| Frontends    | React.js + Flutter   |
 
 ---
 
-# 👥 Team Contribution
+## 🧪 Educational Payment Disclaimer
 
-This project was developed collaboratively with responsibilities divided across:
+The Smart Khata payment gateway is a **demo/mock system only**.
 
-- Backend API Development
-- Frontend Development
-- Database Design
-- Authentication
-- Order Management
-- Ledger Management
-- Payment Workflow
-- Billing
-- Employee Management
-- Reports
-- Testing
-- Documentation
+It does **not**:
+
+- Transfer real money
+- Connect to real banks
+- Process real card or UPI payments
+- Store real banking credentials
 
 ---
 
-# 📝 Project Objective
+## 👨‍💻 Author
 
-The objective of **Smart Khata Book** is to provide a digital business-management platform that helps retailers, wholesalers, customers, and shop owners manage day-to-day business operations.
-
-The platform focuses on:
-
-- Digital Ledger Management
-- Order Management
-- Inventory Management
-- Billing
-- Payment Tracking
-- Employee Management
-- Customer Records
-- Business Reports
-- Secure Authentication
-
-Smart Khata connects business data across web and mobile applications through a centralized backend API.
+Developed by **rrsoni**
+GitHub: https://github.com/Rakshitsoni1410
 
 ---
 
-# 🔮 Future Enhancements
+## 📄 License
 
-Possible future improvements include:
-
-- Real Payment Gateway Integration
-- Real-Time Notifications
-- WebSocket-Based Instant Session Logout
-- Advanced Analytics
-- GST Invoice Support
-- PDF Invoice Export
-- Admin Dashboard
-- Multi-Shop Management
-- Push Notifications
-- AI-Based Business Insights
-- Automated Payment Reminders
-- Cloud Backup
-- Advanced Audit Logs
+Developed for **educational and academic purposes**.
 
 ---
 
-# ❤️ Developed With
-
-- Node.js
-- Express.js
-- MongoDB
-- Mongoose
-- React
-- Flutter
-- JWT
-- bcrypt
-- Redis
-- Vercel
-- Netlify
-
----
-
-# 📄 License
-
-This project is currently developed for **educational and academic purposes**.
-
----
-
-# ⭐ Support
-
-If you like this project, consider giving the repositories a ⭐ on GitHub.
-
-## Backend Repository
-
-https://github.com/Rakshitsoni1410/backend-of-smartkhata-book
-
-## Web Repository
-
-https://github.com/Rakshitsoni1410/web-smartkhatabook
-
-## Flutter Repository
-
-https://github.com/Rakshitsoni1410/smartkhatabook
-
----
-
-**Smart Khata Book — Digital Ledger, Orders, Billing & Business Management 🚀**
+> ⭐ If you find Smart Khata Book useful, consider starring the repositories on GitHub!
+>
+> **Smart Khata Book — Digital Ledger, Smart Orders, Billing, Employees, Notifications & Business Management 🚀**
